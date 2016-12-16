@@ -1,0 +1,8 @@
+[package]
+name = "zip-rs"
+version = "0.1.0"
+authors = ["n00759042"]
+
+[dependencies]
+num = "*"
+num-derive = "*"

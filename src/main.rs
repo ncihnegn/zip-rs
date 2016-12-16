@@ -1,0 +1,420 @@
+#![feature(proc_macro)]
+
+use std::fmt;
+use std::fs::File;
+use std::io;
+use std::io::BufReader;
+use std::io::SeekFrom::Current;
+use std::io::prelude::*;
+use std::string::String;
+use std::vec::Vec;
+
+extern crate num;
+#[macro_use]
+extern crate num_derive;
+
+use num::FromPrimitive;
+
+#[allow(dead_code)]
+#[repr(u32)]
+#[derive(FromPrimitive)]
+enum Signature {
+    LFH = 0x04034b50,
+    AED = 0x08064b50,
+    CFH = 0x02014b50,
+    DS = 0x05054b50,
+    ECDR64 = 0x06064b50,
+    ECDL64 = 0x07064b50,
+    ECDR = 0x06054b50,
+}
+
+#[allow(dead_code)]
+#[repr(u8)]
+#[derive(FromPrimitive)]
+enum Compatibility {
+    FAT = 0,
+    Amiga = 1,
+    OpenVMS = 2,
+    UNIX = 3,
+    VMCMS = 4,
+    AtariST = 5,
+    HPFS = 6,
+    Macintosh = 7,
+    ZSystem = 8,
+    CPM = 9,
+    NTFS = 10,
+    MVS = 11,
+    VSE = 12,
+    AcornRisc = 13,
+    VFAT = 14,
+    AlternateMVS = 15,
+    BeOS = 16,
+    Tandem = 17,
+    OS400 = 18,
+    OSX = 19,
+}
+
+impl fmt::Display for Compatibility {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Compatibility::FAT => write!(f, "FAT/VFAT/FAT32"),
+            Compatibility::Amiga => write!(f, "Amiga"),
+            Compatibility::OpenVMS => write!(f, "OpenVMS"),
+            Compatibility::UNIX => write!(f, "UNIX"),
+            Compatibility::AtariST => write!(f, "Atari ST"),
+            Compatibility::HPFS => write!(f, "OS/2 HPFS"),
+            Compatibility::Macintosh => write!(f, "Macintosh"),
+            Compatibility::ZSystem => write!(f, "Z-System"),
+            Compatibility::CPM => write!(f, "CP/M"),
+            Compatibility::NTFS => write!(f, "Windows NTFS"),
+            Compatibility::MVS => write!(f, "MVS (OS/390 -Z/OS)"),
+            Compatibility::VSE => write!(f, "VSE"),
+            Compatibility::AcornRisc => write!(f, "Acron Risc"),
+            Compatibility::VFAT => write!(f, "VFAT"),
+            Compatibility::AlternateMVS => write!(f, "alterate MVS"),
+            Compatibility::BeOS => write!(f, "BeOS"),
+            Compatibility::Tandem => write!(f, "Tandem"),
+            Compatibility::OS400 => write!(f, "OS400"),
+            Compatibility::OSX => write!(f, "OSX"),
+            _ => write!(f, "Unknown"),
+        }
+    }
+}
+
+#[allow(dead_code)]
+struct Version {
+    compatibility: Compatibility,
+    major: u8,
+    minor: u8,
+}
+
+impl Version {
+    pub fn new() -> Version {
+        Version { compatibility: FromPrimitive::from_u8(0).unwrap(),
+                  major: 4, minor: 1 }
+    }
+    pub fn from(a: &[u8]) -> Version {
+        Version { compatibility: FromPrimitive::from_u8(a[1]).unwrap(),
+                  major: a[0] % (1 << 4), minor: a[0] >> 4 }
+    }
+}
+
+impl fmt::Display for Version {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}({}.{})", self.compatibility, self.major, self.minor)
+    }
+}
+
+#[allow(dead_code)]
+#[repr(u16)]
+#[derive(FromPrimitive)]
+enum CompressionMethod {
+    Store = 0,
+    Shrink = 1,
+    ReduceFactor1 = 2,
+    ReduceFactor2 = 3,
+    ReduceFactor3 = 4,
+    ReduceFactor4 = 5,
+    Implode = 6,
+    Tokenize = 7,
+    Deflate = 8,
+    Deflate64 = 9,
+    TERSEOld = 10,
+    Reserved11 = 11,
+    BZIP2 = 12,
+    Reserved13 = 13,
+    LZMA = 14,
+    Reserved15 = 15,
+    Reserved16 = 16,
+    Reserved17 = 17,
+    TERSENew = 18,
+    LZ77z = 19,
+    WavPack = 97,
+    PPMd = 98,
+}
+
+impl fmt::Display for CompressionMethod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            CompressionMethod::Store => write!(f, "Store"),
+            CompressionMethod::Shrink => write!(f, "Shrink"),
+            CompressionMethod::ReduceFactor1 =>
+                write!(f, "Reduce with Compression Factor 1"),
+            CompressionMethod::ReduceFactor2 =>
+                write!(f, "Reduce with Compression Factor 2"),
+            CompressionMethod::ReduceFactor3 =>
+                write!(f, "Reduce with Compression Factor 3"),
+            CompressionMethod::ReduceFactor4 =>
+                write!(f, "Reduce with Compression Factor 4"),
+            CompressionMethod::Implode => write!(f, "Implode"),
+            CompressionMethod::Tokenize => write!(f, "Tokenize"),
+            CompressionMethod::Deflate => write!(f, "Deflate"),
+            CompressionMethod::Deflate64 => write!(f, "Deflate64"),
+            CompressionMethod::TERSEOld => write!(f, "IBM TERSE (old)"),
+            CompressionMethod::Reserved11 => write!(f, "Reserved11"),
+            CompressionMethod::BZIP2 => write!(f, "BZIP2"),
+            CompressionMethod::Reserved13 => write!(f, "Reserved13"),
+            CompressionMethod::LZMA => write!(f, "LZMA"),
+            CompressionMethod::Reserved15 => write!(f, "Reserved15"),
+            CompressionMethod::Reserved16 => write!(f, "Reserved16"),
+            CompressionMethod::Reserved17 => write!(f, "Reserved17"),
+            CompressionMethod::TERSENew => write!(f, "IBM TERSE (new)"),
+            CompressionMethod::LZ77z => write!(f, "IBM LZ77 z Architecture"),
+            CompressionMethod::WavPack => write!(f, "WavPack"),
+            CompressionMethod::PPMd => write!(f, "PPMd"),
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(FromPrimitive)]
+enum DeflateOption {
+    Normal = 0,
+    Maximum = 1,
+    Fast = 2,
+    SuperFast = 3,
+}
+
+#[allow(dead_code)]
+enum CompressionOption {
+    Implode {
+        dictionary_size: bool,
+        trees: bool,
+    },
+    Deflate(DeflateOption),
+    LZMA(bool),
+}
+
+impl CompressionOption {
+    fn new(a: u8, method: &CompressionMethod) -> CompressionOption {
+        match *method {
+            CompressionMethod::Implode => CompressionOption::Implode{
+                dictionary_size: a & 2 == 2, trees: a & 1 == 1 },
+            CompressionMethod::Deflate | CompressionMethod::Deflate64 =>
+                CompressionOption::Deflate(FromPrimitive::from_u8(a).unwrap()),
+            CompressionMethod::LZMA => CompressionOption::LZMA(a & 1 == 1),
+            _ => CompressionOption::LZMA(false)
+        }
+    }
+}
+
+//impl fmt::Display for CompressionOption::Deflate {
+//    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//        match *self {
+//            DeflateOption::Normal => write!(f, "Deflate (Normal)"),
+//            DeflateOption::Maximum => write!(f, "Deflate (Maximum)"),
+//            DeflateOption::Fast => write!(f, "Deflate (Fast)"),
+//            DeflateOption::SuperFast => write!(f, "Deflate (SuperFast)"),
+//        }
+//    }
+//}
+
+#[allow(dead_code)]
+struct GPBF {
+    encrypted: bool,
+    compression_option: CompressionOption,
+    crc: bool,
+    enhanced_deflating: bool,
+    patched_data: bool,
+    strong_encryption: bool,
+    utf8: bool,
+    enhanced_compression: bool,
+    masked: bool,
+}
+
+impl GPBF {
+    fn new(a: &[u8], method: &CompressionMethod) -> GPBF {
+        let option = CompressionOption::new(a[0] >> 1, method);
+        GPBF { encrypted: a[0] == 1, compression_option: option,
+               crc: a[0] & (1 << 3) == 1 << 3,
+               enhanced_deflating: a[0] & (1 << 4) == 1 << 4,
+               patched_data: a[0] & (1 << 5) == 1 << 5,
+               strong_encryption: a[0] & (1 << 6) == 1 << 6,
+               utf8: a[1] & (1 << (11-8)) == 1 << (11-8),
+               enhanced_compression: a[1] & (1 << (12-8)) == 1 << (12-8),
+               masked: a[1] & (1 << (13-8)) == 1 << (13-8)
+
+        }
+    }
+}
+
+impl fmt::Display for GPBF {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "encrypted: {} {} {} {} {} {} {} {}", self.encrypted,
+               self.crc, self.enhanced_deflating, self.patched_data,
+               self.strong_encryption, self.utf8, self.enhanced_compression,
+               self.masked)
+    }
+}
+
+#[allow(dead_code)]
+struct LocalFileHeader {
+    file_name: String,
+    version_needed_to_extract: Version,
+    general_purpose_bit_flag: GPBF,
+    compression_method: CompressionMethod,
+    compressed_size: u32,
+    uncompressed_size: u32,
+    crc: u32,
+    last_mod_file_time: u16,
+    last_mod_file_date: u16,
+    file_name_length: u16,
+    extra_field_length: u16,
+}
+
+impl fmt::Display for LocalFileHeader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} (0x{:08x}) {} {} {}->{}", self.file_name,
+               self.crc, self.version_needed_to_extract,
+               self.compression_method, self.compressed_size,
+               self.uncompressed_size)
+    }
+}
+
+#[allow(dead_code)]
+struct CentralFileHeader {
+    lfh: LocalFileHeader,
+    disk_number_start: u16,
+    internal_file_attributes: u16,
+    external_file_attributes: u32,
+    relative_offset_of_local_header: u32,
+}
+
+fn trans16(a: [u8; 2]) -> u16 {
+    ((a[1] as u16) << 8) | (a[0] as u16)
+}
+
+fn trans32(a: [u8; 4]) -> u32 {
+    ((a[3] as u32) << 24) | ((a[2] as u32) << 16) | ((a[1] as u32) << 8) |
+    (a[0] as u32)
+}
+
+fn trans64(a: [u8; 8]) -> u64 {
+    ((a[7] as u64) << 56) | ((a[6] as u64) << 48) | ((a[5] as u64) << 40) |
+    ((a[4] as u64) << 32) | ((a[3] as u64) << 24) | ((a[2] as u64) << 16) |
+    ((a[1] as u64) << 8) | (a[0] as u64)
+}
+
+const LFH_SIZE: usize = 2 * 5 + 4 * 3 + 2 * 2;
+
+fn read_lfh(a: [u8; LFH_SIZE - 2]) -> LocalFileHeader {
+    let mut reader = BufReader::new(&a[..]);
+    let mut word: [u8; 2] = [0; 2];
+    let mut dword: [u8; 4] = [0; 4];
+    let _ = reader.read_exact(&mut word);
+    let tmp = word.clone();
+    let _ = reader.read_exact(&mut word);
+    let method: CompressionMethod =
+        FromPrimitive::from_u16(trans16(word)).unwrap();
+    let gpbf = GPBF::new(&tmp, &method);
+    let _ = reader.read_exact(&mut word);
+    let time: u16 = trans16(word);
+    let _ = reader.read_exact(&mut word);
+    let date: u16 = trans16(word);
+    let _ = reader.read_exact(&mut dword);
+    let crc: u32 = trans32(dword);
+    let _ = reader.read_exact(&mut dword);
+    let compressed_size: u32 = trans32(dword);
+    let _ = reader.read_exact(&mut dword);
+    let uncompressed_size: u32 = trans32(dword);
+    let _ = reader.read_exact(&mut word);
+    let file_name_length: u16 = trans16(word);
+    let _ = reader.read_exact(&mut word);
+    let extra_field_length: u16 = trans16(word);
+    LocalFileHeader { file_name: String::new(),
+                      version_needed_to_extract: Version::new(),
+                      general_purpose_bit_flag: gpbf,
+                      compression_method: method,
+                      compressed_size: compressed_size,
+                      uncompressed_size: uncompressed_size,
+                      crc: crc,
+                      last_mod_file_time: time,
+                      last_mod_file_date: date,
+                      file_name_length: file_name_length,
+                      extra_field_length: extra_field_length }
+}
+
+fn parse() -> Result<(), io::Error> {
+    let file = try!(File::open("validate.zip"));
+    let mut reader = BufReader::new(file);
+    let mut word: [u8; 2] = [0; 2];
+    let mut dword: [u8; 4] = [0; 4];
+    let mut qword: [u8; 8] = [0; 8];
+    let mut lfh_array: [u8; LFH_SIZE - 2] = [0; LFH_SIZE - 2];
+    let mut lfh_counter = 0;
+    let mut cfh_counter = 0;
+    let mut lfhs: Vec<LocalFileHeader> = Vec::new();
+    while reader.read_exact(&mut dword).is_ok() {
+        let signature: Signature =
+            FromPrimitive::from_u32(trans32(dword)).unwrap();
+        match signature {
+            Signature::LFH => {
+                lfh_counter += 1;
+                print!("local file header {} ", lfh_counter);
+                try!(reader.read_exact(&mut word));
+                let version = Version::from(&word);
+                try!(reader.read_exact(&mut lfh_array));
+                let mut lfh = read_lfh(lfh_array);
+                lfh.version_needed_to_extract = version;
+                let mut v = Vec::<u8>::new();
+                v.resize(lfh.file_name_length as usize, 0);
+                try!(reader.read_exact(&mut v as &mut [u8]));
+                lfh.file_name = String::from_utf8(v).unwrap();
+                try!(reader.seek(Current(lfh.extra_field_length as i64)));
+                let position = try!(reader.seek(Current(0)));
+                try!(reader.seek(Current(lfh.compressed_size as i64)));
+                println!("0x{:08x}", position);
+                println!("{}", lfh);
+                lfhs.push(lfh);
+            }
+            Signature::CFH => {
+                cfh_counter += 1;
+                println!("central file header {}", cfh_counter);
+                try!(reader.read_exact(&mut word));
+                let version_extract = Version::from(&word);
+                try!(reader.read_exact(&mut word));
+                let version_made = Version::from(&word);
+                let mut lfh = read_lfh(lfh_array);
+                lfh.version_needed_to_extract = version_extract;
+                let mut v = Vec::<u8>::new();
+                v.resize(lfh.file_name_length as usize, 0);
+                try!(reader.read_exact(&mut v as &mut [u8]));
+                lfh.file_name = String::from_utf8(v).unwrap();
+                try!(reader.seek(Current(lfh.extra_field_length as i64)));
+                try!(reader.read_exact(&mut word));
+                let file_comment_length: u16 = trans16(word);
+                try!(reader.seek(Current(2 * 2 + 4 * 2)));
+                try!(reader.seek(Current(file_name_length as i64)));
+                try!(reader.seek(Current(extra_field_length as i64)));
+                try!(reader.seek(Current(file_comment_length as i64)));
+            }
+            Signature::ECDR64 => {
+                println!("Zip64 end of central directory record");
+                try!(reader.read_exact(&mut qword));
+                let size: u64 = trans64(qword);
+                try!(reader.seek(Current(size as i64)));
+            }
+            Signature::ECDL64 => {
+                println!("Zip64 end of central directory locator");
+                try!(reader.seek(Current(4 + 8 + 4)));
+            }
+            Signature::ECDR => {
+                println!("end of central directory record");
+                try!(reader.seek(Current(2 * 4 + 4 * 2)));
+                try!(reader.read_exact(&mut word));
+                let file_comment_length: u16 = trans16(word);
+                try!(reader.seek(Current(file_comment_length as i64)));
+            }
+            _ => {
+                println!("unknown signature 0x{:08x}", signature as i32);
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn main() {
+    println!("Hello, world!");
+    let _ = parse();
+}
