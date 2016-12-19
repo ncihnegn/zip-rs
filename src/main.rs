@@ -88,6 +88,7 @@ struct Version {
     minor: u8,
 }
 
+#[allow(dead_code)]
 impl Version {
     pub fn new() -> Version {
         Version { compatibility: FromPrimitive::from_u8(0).unwrap(),
@@ -168,6 +169,7 @@ impl fmt::Display for CompressionMethod {
 
 #[allow(dead_code)]
 #[derive(FromPrimitive)]
+#[derive(Debug)]
 enum DeflateOption {
     Normal = 0,
     Maximum = 1,
@@ -175,7 +177,19 @@ enum DeflateOption {
     SuperFast = 3,
 }
 
+impl fmt::Display for DeflateOption {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            DeflateOption::Normal => write!(f, "Normal"),
+            DeflateOption::Maximum => write!(f, "Maximum"),
+            DeflateOption::Fast => write!(f, "Fast"),
+            DeflateOption::SuperFast => write!(f, "SuperFast"),
+        }
+    }
+}
+
 #[allow(dead_code)]
+#[derive(Debug)]
 enum CompressionOption {
     Implode {
         dictionary_size: bool,
@@ -186,33 +200,32 @@ enum CompressionOption {
 }
 
 impl CompressionOption {
-    fn new(a: u8, method: &CompressionMethod) -> CompressionOption {
+    fn new(a: u8, method: &CompressionMethod) -> Option<CompressionOption> {
         match *method {
-            CompressionMethod::Implode => CompressionOption::Implode{
-                dictionary_size: a & 2 == 2, trees: a & 1 == 1 },
+            CompressionMethod::Implode => Some(CompressionOption::Implode{
+                dictionary_size: a & 2 == 2, trees: a & 1 == 1 }),
             CompressionMethod::Deflate | CompressionMethod::Deflate64 =>
-                CompressionOption::Deflate(FromPrimitive::from_u8(a).unwrap()),
-            CompressionMethod::LZMA => CompressionOption::LZMA(a & 1 == 1),
-            _ => CompressionOption::LZMA(false)
+                Some(CompressionOption::Deflate(FromPrimitive::from_u8(a).unwrap())),
+            CompressionMethod::LZMA => Some(CompressionOption::LZMA(a & 1 == 1)),
+            _ => None
         }
     }
 }
 
-//impl fmt::Display for CompressionOption::Deflate {
-//    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//        match *self {
-//            DeflateOption::Normal => write!(f, "Deflate (Normal)"),
-//            DeflateOption::Maximum => write!(f, "Deflate (Maximum)"),
-//            DeflateOption::Fast => write!(f, "Deflate (Fast)"),
-//            DeflateOption::SuperFast => write!(f, "Deflate (SuperFast)"),
-//        }
-//    }
-//}
+impl fmt::Display for CompressionOption {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            CompressionOption::Implode{ dictionary_size, trees } => write!(f, "{}-{}", dictionary_size, trees),
+            CompressionOption::Deflate(ref option) => write!(f, "{}", option),
+            CompressionOption::LZMA(option) => write!(f, "{}", option),
+        }
+    }
+}
 
 #[allow(dead_code)]
 struct GPBF {
     encrypted: bool,
-    compression_option: CompressionOption,
+    compression_option: Option<CompressionOption>,
     crc: bool,
     enhanced_deflating: bool,
     patched_data: bool,
@@ -232,9 +245,7 @@ impl GPBF {
                strong_encryption: a[0] & (1 << 6) == 1 << 6,
                utf8: a[1] & (1 << (11-8)) == 1 << (11-8),
                enhanced_compression: a[1] & (1 << (12-8)) == 1 << (12-8),
-               masked: a[1] & (1 << (13-8)) == 1 << (13-8)
-
-        }
+               masked: a[1] & (1 << (13-8)) == 1 << (13-8) }
     }
 }
 
@@ -264,21 +275,34 @@ struct LocalFileHeader {
 
 impl fmt::Display for LocalFileHeader {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} (0x{:08x}) {} {} {}->{}", self.file_name,
+        write!(f, "{} (0x{:08x}) {} {} {:?} {}->{}", self.file_name,
                self.crc, self.version_needed_to_extract,
-               self.compression_method, self.compressed_size,
-               self.uncompressed_size)
+               self.compression_method,
+               self.general_purpose_bit_flag.compression_option,
+               self.compressed_size, self.uncompressed_size)
     }
 }
 
 #[allow(dead_code)]
 struct CentralFileHeader {
     lfh: LocalFileHeader,
+    version_made_by: Version,
     disk_number_start: u16,
     internal_file_attributes: u16,
     external_file_attributes: u32,
     relative_offset_of_local_header: u32,
 }
+
+impl fmt::Display for CentralFileHeader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} (0x{:08x}) {} {} {:?} {}->{}", self.lfh.file_name,
+               self.lfh.crc, self.lfh.version_needed_to_extract,
+               self.lfh.compression_method,
+               self.lfh.general_purpose_bit_flag.compression_option,
+               self.lfh.compressed_size, self.lfh.uncompressed_size)
+    }
+}
+
 
 fn trans16(a: [u8; 2]) -> u16 {
     ((a[1] as u16) << 8) | (a[0] as u16)
@@ -297,10 +321,12 @@ fn trans64(a: [u8; 8]) -> u64 {
 
 const LFH_SIZE: usize = 2 * 5 + 4 * 3 + 2 * 2;
 
-fn read_lfh(a: [u8; LFH_SIZE - 2]) -> LocalFileHeader {
+fn read_lfh(a: [u8; LFH_SIZE]) -> LocalFileHeader {
     let mut reader = BufReader::new(&a[..]);
     let mut word: [u8; 2] = [0; 2];
     let mut dword: [u8; 4] = [0; 4];
+    let _ = reader.read_exact(&mut word);
+    let version = Version::from(&word);
     let _ = reader.read_exact(&mut word);
     let tmp = word.clone();
     let _ = reader.read_exact(&mut word);
@@ -322,7 +348,7 @@ fn read_lfh(a: [u8; LFH_SIZE - 2]) -> LocalFileHeader {
     let _ = reader.read_exact(&mut word);
     let extra_field_length: u16 = trans16(word);
     LocalFileHeader { file_name: String::new(),
-                      version_needed_to_extract: Version::new(),
+                      version_needed_to_extract: version,
                       general_purpose_bit_flag: gpbf,
                       compression_method: method,
                       compressed_size: compressed_size,
@@ -335,27 +361,25 @@ fn read_lfh(a: [u8; LFH_SIZE - 2]) -> LocalFileHeader {
 }
 
 fn parse() -> Result<(), io::Error> {
-    let file = try!(File::open("validate.zip"));
+    let file = try!(File::open("Cargo.zip"));
     let mut reader = BufReader::new(file);
     let mut word: [u8; 2] = [0; 2];
     let mut dword: [u8; 4] = [0; 4];
     let mut qword: [u8; 8] = [0; 8];
-    let mut lfh_array: [u8; LFH_SIZE - 2] = [0; LFH_SIZE - 2];
+    let mut lfh_array: [u8; LFH_SIZE] = [0; LFH_SIZE];
     let mut lfh_counter = 0;
     let mut cfh_counter = 0;
     let mut lfhs: Vec<LocalFileHeader> = Vec::new();
     while reader.read_exact(&mut dword).is_ok() {
+        //println!("0x{:08x}", trans32(dword));
         let signature: Signature =
             FromPrimitive::from_u32(trans32(dword)).unwrap();
         match signature {
             Signature::LFH => {
                 lfh_counter += 1;
                 print!("local file header {} ", lfh_counter);
-                try!(reader.read_exact(&mut word));
-                let version = Version::from(&word);
                 try!(reader.read_exact(&mut lfh_array));
                 let mut lfh = read_lfh(lfh_array);
-                lfh.version_needed_to_extract = version;
                 let mut v = Vec::<u8>::new();
                 v.resize(lfh.file_name_length as usize, 0);
                 try!(reader.read_exact(&mut v as &mut [u8]));
@@ -371,22 +395,33 @@ fn parse() -> Result<(), io::Error> {
                 cfh_counter += 1;
                 println!("central file header {}", cfh_counter);
                 try!(reader.read_exact(&mut word));
-                let version_extract = Version::from(&word);
-                try!(reader.read_exact(&mut word));
-                let version_made = Version::from(&word);
+                let version_made_by = Version::from(&word);
+                try!(reader.read_exact(&mut lfh_array));
                 let mut lfh = read_lfh(lfh_array);
-                lfh.version_needed_to_extract = version_extract;
+                try!(reader.read_exact(&mut word));
+                let file_comment_length: u16 = trans16(word);
+                try!(reader.read_exact(&mut word));
+                let disk_number = trans16(word);
+                try!(reader.read_exact(&mut word));
+                let internal = trans16(word);
+                try!(reader.read_exact(&mut dword));
+                let external = trans32(dword);
+                try!(reader.read_exact(&mut dword));
+                let offset = trans32(dword);
                 let mut v = Vec::<u8>::new();
                 v.resize(lfh.file_name_length as usize, 0);
                 try!(reader.read_exact(&mut v as &mut [u8]));
                 lfh.file_name = String::from_utf8(v).unwrap();
+                //try!(reader.seek(Current(lfh.file_name_length as i64)));
                 try!(reader.seek(Current(lfh.extra_field_length as i64)));
-                try!(reader.read_exact(&mut word));
-                let file_comment_length: u16 = trans16(word);
-                try!(reader.seek(Current(2 * 2 + 4 * 2)));
-                try!(reader.seek(Current(file_name_length as i64)));
-                try!(reader.seek(Current(extra_field_length as i64)));
                 try!(reader.seek(Current(file_comment_length as i64)));
+                let cfh = CentralFileHeader { version_made_by: version_made_by,
+                                              disk_number_start: disk_number,
+                                              internal_file_attributes: internal,
+                                              external_file_attributes: external,
+                                              relative_offset_of_local_header: offset,
+                                              lfh: lfh };
+                println!("{}", cfh);
             }
             Signature::ECDR64 => {
                 println!("Zip64 end of central directory record");
@@ -415,6 +450,5 @@ fn parse() -> Result<(), io::Error> {
 }
 
 fn main() {
-    println!("Hello, world!");
     let _ = parse();
 }
