@@ -205,8 +205,10 @@ impl CompressionOption {
             CompressionMethod::Implode => Some(CompressionOption::Implode{
                 dictionary_size: a & 2 == 2, trees: a & 1 == 1 }),
             CompressionMethod::Deflate | CompressionMethod::Deflate64 =>
-                Some(CompressionOption::Deflate(FromPrimitive::from_u8(a).unwrap())),
-            CompressionMethod::LZMA => Some(CompressionOption::LZMA(a & 1 == 1)),
+                Some(CompressionOption::Deflate(
+                    FromPrimitive::from_u8(a).unwrap())),
+            CompressionMethod::LZMA => Some(
+                CompressionOption::LZMA(a & 1 == 1)),
             _ => None
         }
     }
@@ -215,7 +217,8 @@ impl CompressionOption {
 impl fmt::Display for CompressionOption {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            CompressionOption::Implode{ dictionary_size, trees } => write!(f, "{}-{}", dictionary_size, trees),
+            CompressionOption::Implode { dictionary_size, trees } =>
+                write!(f, "{}-{}", dictionary_size, trees),
             CompressionOption::Deflate(ref option) => write!(f, "{}", option),
             CompressionOption::LZMA(option) => write!(f, "{}", option),
         }
@@ -415,12 +418,13 @@ fn parse() -> Result<(), io::Error> {
                 //try!(reader.seek(Current(lfh.file_name_length as i64)));
                 try!(reader.seek(Current(lfh.extra_field_length as i64)));
                 try!(reader.seek(Current(file_comment_length as i64)));
-                let cfh = CentralFileHeader { version_made_by: version_made_by,
-                                              disk_number_start: disk_number,
-                                              internal_file_attributes: internal,
-                                              external_file_attributes: external,
-                                              relative_offset_of_local_header: offset,
-                                              lfh: lfh };
+                let cfh = CentralFileHeader {
+                    version_made_by: version_made_by,
+                    disk_number_start: disk_number,
+                    internal_file_attributes: internal,
+                    external_file_attributes: external,
+                    relative_offset_of_local_header: offset,
+                    lfh: lfh };
                 println!("{}", cfh);
             }
             Signature::ECDR64 => {
