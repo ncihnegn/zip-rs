@@ -38,7 +38,7 @@ pub fn read_fixed_length(lit: Literal, reader: &mut BitReader) -> Length {
     } else {
         let s = (len - 8) / 4;
         len = 10 + ((1 << (s + 1)) - 2) * 4 + ((len - 8) % 4) * (1 << s);
-        len += reader.read_bits(s as u8, true).unwrap();
+        len += reader.read_bits(s as u8, false).unwrap();
     }
     len
 }
@@ -55,3 +55,27 @@ pub fn read_fixed_distance(reader: &mut BitReader) -> Distance {
     }
     dist
 }
+
+pub struct CodeLength {
+    hlit: Vec<u8>,
+    hdist: Vec<u8>,
+}
+
+pub fn read_code_tree(reader: &mut BitReader) -> CodeLength {
+    let hlit = reader.read_bits(5, false).unwrap();
+    let hdist = reader.read_bits(5, false).unwrap();
+    let hclen = reader.read_bits(5, false).unwrap();
+    let mut hclen_len = Vec::<u8>::new();
+    hclen_len.resize((hclen+4) as usize, 0);
+    let seq = [16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];
+    for i in seq.iter() {
+        hclen_len[*i] = reader.read_bits(3, false).unwrap() as u8;
+    }
+    let mut code_len = CodeLength { hlit: Vec::<u8>::new(),
+                                    hdist: Vec::<u8>::new() };
+    for i in 0..hlit as usize+257 {
+        code_len.hlit[i] = reader.read_bits(3, false).unwrap() as u8;
+    }
+    code_len
+}
+
