@@ -1,4 +1,4 @@
-type Bits = u16;
+pub type Bits = u16;
 
 pub struct BitReader<'a> {
     buf: &'a[u8],

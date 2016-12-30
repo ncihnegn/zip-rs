@@ -61,6 +61,34 @@ pub struct CodeLength {
     hdist: Vec<u8>,
 }
 
+pub fn gen_huffman_table(v: &Vec<u8>) -> Vec<Bits>{
+    let mut bl_count = Vec::<Bits>::new();
+    let max_bits = v.iter().max().unwrap().clone() as usize;
+    bl_count.resize(max_bits+1, 0);
+    for i in v {
+        bl_count[*i as usize] += 1;
+    }
+    let mut next_code = Vec::<Bits>::with_capacity(max_bits+1);
+    next_code.push(0);
+    let mut code: Bits = 0;
+    bl_count[0] = 0;
+    for bits in 1..max_bits+1 {
+        code = (code + bl_count[bits-1]) << 1;
+        next_code.push(code);
+    }
+    let max_code = v.len()-1;
+    let mut code_table = Vec::<Bits>::new();
+    code_table.resize(max_code+1, 0);
+    for n in 1..max_code+1 {
+        let len = v[n] as usize;
+        if len != 0 {
+            code_table[n] = next_code[len];
+            next_code[len] += 1;
+        }
+    }
+    code_table
+}
+
 pub fn read_code_tree(reader: &mut BitReader) -> CodeLength {
     let hlit = reader.read_bits(5, false).unwrap();
     let hdist = reader.read_bits(5, false).unwrap();
