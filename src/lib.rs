@@ -1,5 +1,3 @@
-#![feature(proc_macro)]
-
 extern crate num;
 #[macro_use]
 extern crate num_derive;

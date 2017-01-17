@@ -12,7 +12,6 @@ use num::FromPrimitive;
 
 use bitstream::*;
 use deflate::*;
-//use huffman::*;
 
 #[allow(dead_code)]
 #[repr(u32)]
@@ -478,13 +477,33 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
             0 => println!("Block is stored"),
             1 => {
                 println!("Fixed Huffman codes");
-                let v = inflate(&mut reader);
+                let v = inflate(&mut reader, true);
                 println!("{}", String::from_utf8(v).unwrap());
             }
-            2 => println!("Dynamic Huffman codes"),
+            2 => {
+                println!("Dynamic Huffman codes");
+                let v = inflate(&mut reader, false);
+                println!("{}", String::from_utf8(v).unwrap());
+            }
             3 => println!("Reserved"),
             _ => println!("Unknown error"),
         }
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn fixed_huffman() {
+        let _ = parse("fixed_huffman.zip");
+    }
+
+    #[test]
+    fn dynamic_huffman() {
+        let _ = parse("dynamic_huffman.zip");
+    }
+}
+
