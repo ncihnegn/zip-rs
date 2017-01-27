@@ -1,3 +1,4 @@
+extern crate crc;
 #[macro_use]
 extern crate log;
 extern crate num;

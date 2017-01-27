@@ -8,6 +8,7 @@ use std::mem::transmute;
 use std::string::String;
 use std::vec::Vec;
 
+use crc::crc32;
 use num::FromPrimitive;
 
 use bitstream::*;
@@ -471,21 +472,22 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
             debug!("Last Block bit is set");
         }
         let block_type = reader.read_bits(2, true).unwrap();
+        let mut v = Vec::new();
         match block_type {
             0 => debug!("Block is stored"),
             1 => {
                 debug!("Fixed Huffman codes");
-                let v = inflate(&mut reader, true);
-                debug!("{}", String::from_utf8(v).unwrap());
+                v = inflate(&mut reader, true);
             }
             2 => {
                 debug!("Dynamic Huffman codes");
-                let v = inflate(&mut reader, false);
-                debug!("{}", String::from_utf8(v).unwrap());
+                v = inflate(&mut reader, false);
             }
             3 => debug!("Reserved"),
             _ => panic!("Unknown error"),
         }
+        assert_eq!(crc32::checksum_ieee(&v), lfh.crc);
+        debug!("{}", String::from_utf8(v).unwrap());
     }
     Ok(())
 }

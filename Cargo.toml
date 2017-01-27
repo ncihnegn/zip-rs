@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["ncihnegn"]
 
 [dependencies]
+crc = "*"
 env_logger = "*"
 log = "*"
 num = "*"
