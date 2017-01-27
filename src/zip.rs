@@ -391,7 +391,7 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
         match signature {
             Signature::LFH => {
                 lfh_counter += 1;
-                print!("local file header {} ", lfh_counter);
+                debug!("local file header {} ", lfh_counter);
                 try!(reader.read_exact(&mut lfh_array));
                 let mut lfh = read_lfh(lfh_array);
                 let mut v = Vec::<u8>::new();
@@ -401,13 +401,13 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
                 try!(reader.seek(Current(lfh.extra_field_length as i64)));
                 let position = try!(reader.seek(Current(0)));
                 try!(reader.seek(Current(lfh.compressed_size as i64)));
-                println!("0x{:08x}", position);
-                println!("{}", lfh);
+                debug!("0x{:08x}", position);
+                debug!("{}", lfh);
                 lfhs.insert(position, lfh);
             }
             Signature::CFH => {
                 cfh_counter += 1;
-                println!("central file header {}", cfh_counter);
+                debug!("central file header {}", cfh_counter);
                 try!(reader.read_exact(&mut word));
                 let version_made_by = Version::from(&word);
                 try!(reader.read_exact(&mut lfh_array));
@@ -426,7 +426,6 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
                 v.resize(lfh.file_name_length as usize, 0);
                 try!(reader.read_exact(&mut v as &mut [u8]));
                 lfh.file_name = String::from_utf8(v).unwrap();
-                //try!(reader.seek(Current(lfh.file_name_length as i64)));
                 try!(reader.seek(Current(lfh.extra_field_length as i64)));
                 try!(reader.seek(Current(file_comment_length as i64)));
                 let cfh = CentralFileHeader {
@@ -436,28 +435,27 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
                     external_file_attributes: external,
                     relative_offset_of_local_header: offset,
                     lfh: lfh };
-                println!("{}", cfh);
+                debug!("{}", cfh);
             }
             Signature::ECDR64 => {
-                println!("Zip64 end of central directory record");
+                debug!("Zip64 end of central directory record");
                 try!(reader.read_exact(&mut qword));
                 let size: u64 = trans64(qword);
                 try!(reader.seek(Current(size as i64)));
             }
             Signature::ECDL64 => {
-                println!("Zip64 end of central directory locator");
+                debug!("Zip64 end of central directory locator");
                 try!(reader.seek(Current(4 + 8 + 4)));
             }
             Signature::ECDR => {
-                println!("end of central directory record");
+                debug!("end of central directory record");
                 try!(reader.seek(Current(2 * 4 + 4 * 2)));
                 try!(reader.read_exact(&mut word));
                 let file_comment_length: u16 = trans16(word);
                 try!(reader.seek(Current(file_comment_length as i64)));
             }
             _ => {
-                println!("unknown signature 0x{:08x}", signature as i32);
-                break;
+                panic!("unknown signature 0x{:08x}", signature as i32);
             }
         }
     }
@@ -470,23 +468,23 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
         let mut reader = BitReader::new(&v as &[u8]);
         let last_block_bit = reader.read_bits(1, true).unwrap();
         if last_block_bit == 1 {
-            println!("Last Block bit is set");
+            debug!("Last Block bit is set");
         }
         let block_type = reader.read_bits(2, true).unwrap();
         match block_type {
-            0 => println!("Block is stored"),
+            0 => debug!("Block is stored"),
             1 => {
-                println!("Fixed Huffman codes");
+                debug!("Fixed Huffman codes");
                 let v = inflate(&mut reader, true);
-                println!("{}", String::from_utf8(v).unwrap());
+                debug!("{}", String::from_utf8(v).unwrap());
             }
             2 => {
-                println!("Dynamic Huffman codes");
+                debug!("Dynamic Huffman codes");
                 let v = inflate(&mut reader, false);
-                println!("{}", String::from_utf8(v).unwrap());
+                debug!("{}", String::from_utf8(v).unwrap());
             }
-            3 => println!("Reserved"),
-            _ => println!("Unknown error"),
+            3 => debug!("Reserved"),
+            _ => panic!("Unknown error"),
         }
     }
     Ok(())

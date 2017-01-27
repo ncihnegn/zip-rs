@@ -1,8 +1,10 @@
 [package]
-name = "zip-rs"
+name = "zip"
 version = "0.1.0"
 authors = ["ncihnegn"]
 
 [dependencies]
+env_logger = "*"
+log = "*"
 num = "*"
 num-derive = "*"
