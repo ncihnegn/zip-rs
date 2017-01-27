@@ -167,8 +167,8 @@ impl fmt::Display for CompressionMethod {
 }
 
 #[allow(dead_code)]
-#[derive(FromPrimitive)]
-#[derive(Debug)]
+#[derive(Debug,FromPrimitive)]
+//#[derive(Debug)]
 enum DeflateOption {
     Normal = 0,
     Maximum = 1,
