@@ -7,6 +7,7 @@ extern crate num_derive;
 
 pub mod bitstream;
 pub mod deflate;
+pub mod gzip;
 pub mod huffman;
 pub mod zip;
 
