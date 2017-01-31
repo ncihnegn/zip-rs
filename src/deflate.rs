@@ -1,3 +1,5 @@
+use std::io::{BufReader, Read};
+//use std::io::SeekFrom::Current;
 use std::iter::FromIterator;
 
 use bitstream::*;
@@ -7,7 +9,7 @@ pub const NUM_LITERAL: u16 = 288;
 
 //static fixed_lit_count: Vec<u16> = vec!(0,0,0,0,0,0,280-256,144+288-280,256-244);
 
-fn read_length(lit: u16, reader: &mut BitReader) -> u16 {
+fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> u16 {
     let mut len = lit - 257;
     if len < 8 {
         len += 3;
@@ -20,7 +22,7 @@ fn read_length(lit: u16, reader: &mut BitReader) -> u16 {
     len
 }
 
-fn read_distance(dist_code: u16, reader: &mut BitReader) -> u16 {
+fn read_distance<R: Read>(dist_code: u16, reader: &mut BitReader<R>) -> u16 {
     assert!(dist_code < 30);
     let mut distance = dist_code;
     if dist_code > 3 {
@@ -31,7 +33,7 @@ fn read_distance(dist_code: u16, reader: &mut BitReader) -> u16 {
     distance + 1
 }
 
-pub fn read_codelens(reader: &mut BitReader, clen_dec: &HuffmanDec, n: usize) -> Vec<u8> {
+pub fn read_codelens<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, n: usize) -> Vec<u8> {
     let mut lens = Vec::<u8>::new();
     lens.resize(n, 0);
     let mut index = 0;
@@ -70,7 +72,7 @@ pub fn read_codelens(reader: &mut BitReader, clen_dec: &HuffmanDec, n: usize) ->
     lens
 }
 
-pub fn read_code_table(reader: &mut BitReader) -> (HuffmanDec, HuffmanDec) {
+pub fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> (HuffmanDec, HuffmanDec) {
     let hlit = reader.read_bits(5, true).unwrap() as usize + 257;
     let hdist = reader.read_bits(5, true).unwrap() as usize + 1;
     let hclen = reader.read_bits(4, true).unwrap() as usize + 4;
@@ -88,7 +90,7 @@ pub fn read_code_table(reader: &mut BitReader) -> (HuffmanDec, HuffmanDec) {
     (gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16))
 }
 
-pub fn read_fixed_literal(reader: &mut BitReader) -> u16 {
+pub fn read_fixed_literal<R: Read>(reader: &mut BitReader<R>) -> u16 {
     let mut lit = reader.read_bits(7, false).unwrap();
     if lit <= 0b0010111 {
         lit += 256;
@@ -112,21 +114,43 @@ pub fn read_fixed_literal(reader: &mut BitReader) -> u16 {
     lit
 }
 
-pub fn inflate(reader: &mut BitReader, fixed: bool) -> Vec<u8> {
-    let mut v = Vec::<u8>::new();
-    let  (lit_dec, dist_dec) = if fixed { (HuffmanDec::fixed_literal(), HuffmanDec::new()) } else { read_code_table(reader) };
+pub fn inflate<R: Read>(input: &mut BufReader<R>) -> Vec<u8> {
+    let mut reader = BitReader::new(input);
+    let mut v = Vec::<u8>::new();//writer = Cursor::new(Vec::new());
+    let last_block_bit = reader.read_bits(1, true).unwrap();
+    if last_block_bit == 1 {
+        debug!("Last Block bit is set");
+    }
+    let block_type = reader.read_bits(2, true).unwrap();
+    let mut fixed_huffman = false;
+    match block_type {
+        0 => debug!("Block is stored"),
+        1 => {
+            debug!("Fixed Huffman codes");
+            fixed_huffman = true;
+        }
+        2 => {
+            debug!("Dynamic Huffman codes");
+        }
+        3 => debug!("Reserved"),
+        _ => panic!("Unknown error"),
+    }
+
+    let (lit_dec, dist_dec) = if fixed_huffman { (HuffmanDec::fixed_literal(), HuffmanDec::new()) } else { read_code_table(&mut reader) };
     loop {
-        let lit = read_code(reader, &lit_dec).unwrap();
+        let lit = read_code(&mut reader, &lit_dec).unwrap();
         match lit {
             0...255 => {
-                v.push(lit as u8);
+                let mut byte: [u8; 1] = [0; 1];
+                byte[0] = lit as u8;
+                v.push(byte[0]);
                 debug!("lit: {:02x}", lit);
             }
             256 => break,
             257...285 => {
-                let len = read_length(lit, reader) as usize;
-                let dist_code = if fixed { reader.read_bits(5, false).unwrap() } else { read_code(reader, &dist_dec).unwrap() };
-                let dist = read_distance(dist_code, reader) as usize;
+                let len = read_length(lit, &mut reader) as usize;
+                let dist_code = if fixed_huffman { reader.read_bits(5, false).unwrap() } else { read_code(&mut reader, &dist_dec).unwrap() };
+                let dist = read_distance(dist_code, &mut reader) as usize;
                 assert!(dist > 0);
                 debug!("{}({}),{} {}", dist, dist_code, len, v.len());
                 debug!("{:?}", v);
@@ -137,10 +161,16 @@ pub fn inflate(reader: &mut BitReader, fixed: bool) -> Vec<u8> {
                     cur_len = dist;
                 }
                 let mut copied = 0;
+                //let mut seg: Vec<u8> = vec![0; cur_len];//Vec::new();
                 let mut seg = Vec::from_iter(v[v.len() - dist ..
-                                           v.len() - dist + cur_len]
-                                         .iter().cloned());
+                                               v.len() - dist + cur_len]
+                                             .iter().cloned());
+                //seg.resize(cur_len, 0);
+                //TODO: seek
+                //writer.seek(Current(-dist));
+                //writer.read_exact(&mut seg as &mut [u8]);
                 while copied + cur_len <= len {
+                    //writer.write(&seg as &[u8]);
                     v.extend_from_slice(&seg);
                     copied += cur_len;
                 }
@@ -148,6 +178,7 @@ pub fn inflate(reader: &mut BitReader, fixed: bool) -> Vec<u8> {
                     cur_len = len - copied;
                     seg.resize(cur_len, 0);
                     v.extend_from_slice(&seg);
+                    //writer.write(&seg as &[u8]);
                 }
             }
             _ => panic!("Out-of-range literal"),

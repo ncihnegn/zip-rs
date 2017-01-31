@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs::File;
 use std::io::{self, BufReader};
 use std::io::prelude::*;
@@ -5,6 +6,8 @@ use std::io::prelude::*;
 use num::FromPrimitive;
 
 //use bitstream::*;
+//use deflate::*;
+use util::*;
 
 struct Flags {
     ftext: bool,
@@ -18,14 +21,70 @@ struct Flags {
 #[repr(u8)]
 #[derive(FromPrimitive)]
 enum ExtraFlags {
-    MAXIMUM = 2,
+    Ignored = 0,
+    Maximum = 2,
     Fastest = 4,
+}
+
+#[allow(dead_code)]
+#[repr(u8)]
+#[derive(FromPrimitive)]
+enum OS {
+    FAT = 0,
+    Amiga = 1,
+    VMS = 2,
+    UNIX = 3,
+    VMCMS = 4,
+    AtariTOS = 5,
+    HPFS = 6,
+    Macintosh = 7,
+    ZSystem = 8,
+    CPM = 9,
+    TOPS20 = 10,
+    NTFS = 11,
+    QDOS = 12,
+    AcornRISCOS = 13,
+    Unknown = 255,
+}
+
+impl fmt::Display for OS {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            OS::FAT => write!(f, "FAT"),
+            OS::Amiga => write!(f, "Amiga"),
+            OS::VMS => write!(f, "VMS"),
+            OS::UNIX => write!(f, "UNIX"),
+            OS::VMCMS => write!(f, "VM/CMS"),
+            OS::AtariTOS => write!(f, "Atari TOS"),
+            OS::HPFS => write!(f, "HPFS"),
+            OS::Macintosh => write!(f, "Macintosh"),
+            OS::ZSystem => write!(f, "Z-System"),
+            OS::CPM => write!(f, "CP/M"),
+            OS::TOPS20 => write!(f, "TOPS-20"),
+            OS::NTFS => write!(f, "NTFS"),
+            OS::QDOS => write!(f, "QDOS"),
+            OS::AcornRISCOS => write!(f, "Acron RISCOS"),
+            _ => write!(f, "Unknown"),
+        }
+    }
+}
+
+#[allow(dead_code)]
+struct GzipMember {
+    flg: Flags,
+    xfl: ExtraFlags,
+    mtime: u32,
+    os: OS,
+    crc16: u16,
+    crc32: u32,
+    _isize: u32,
 }
 
 pub fn parse(file_name: &str) -> Result<(), io::Error> {
     let file = try!(File::open(file_name));
     let mut reader = BufReader::new(file);
     let mut byte: [u8; 1] = [0; 1];
+    let mut word: [u8; 2] = [0; 2];
     let mut dword: [u8; 4] = [0; 4];
     try!(reader.read_exact(&mut byte));
     assert!(byte[0] == 0x1F);
@@ -51,9 +110,45 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
         flg.fcomment = true;
     }
     try!(reader.read_exact(&mut dword));
-    let mtime = dword;
+    let mtime = trans32(dword);
+    try!(reader.read_exact(&mut byte));
+    let xfl = FromPrimitive::from_u8(byte[0]).unwrap();
+    try!(reader.read_exact(&mut byte));
+    let os = FromPrimitive::from_u8(byte[0]).unwrap();
+    let mut extra = Vec::<u8>::new();
+    if flg.fextra {
+        try!(reader.read_exact(&mut word));
+        let xlen = trans16(word);
+        extra.resize(xlen as usize, 0);
+        try!(reader.read_exact(&mut extra as &mut [u8]));
+    }
+    let mut file_name = Vec::<u8>::new();
+    if flg.fname {
+        try!(reader.read_until(0, &mut file_name));
+    }
+    debug!("File name: {}", String::from_utf8(file_name).unwrap());
+    let mut file_comment = Vec::<u8>::new();
+    if flg.fcomment {
+        try!(reader.read_until(0, &mut file_comment));
+        debug!("File comment: {}", String::from_utf8(file_comment).unwrap());
+    }
+    let mut crc16: u16 = 0;
+    if flg.fhcrc {
+        try!(reader.read_exact(&mut word));
+        crc16 = trans16(word);
+    }
+    let crc32: u32 = 0;
+    let _isize: u32 = 0;
+
+    let _ = GzipMember { flg: flg, mtime: mtime, xfl: xfl, os: os, crc16: crc16, crc32: crc32, _isize: 0 };
     Ok(())
 }
+
+//pub fn extract(file_name: &str) -> Result<(), io::Error> {
+//    let file = try!(File::create(file_name));
+//    let mut buf = BufWriter::with_capacity(32 * 1024, file);
+//    Ok(())
+//}
 
 #[cfg(test)]
 mod test {
@@ -61,6 +156,6 @@ mod test {
 
     #[test]
     fn basic() {
-        let _ = parse("Cargo.zip.gz");
+        assert!(parse("Cargo.zip.gz").unwrap() == ());
     }
 }

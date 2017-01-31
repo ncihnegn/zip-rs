@@ -4,15 +4,14 @@ use std::fs::File;
 use std::io::{self, BufReader};
 use std::io::SeekFrom::{Current, Start};
 use std::io::prelude::*;
-use std::mem::transmute;
 use std::string::String;
 use std::vec::Vec;
 
 use crc::crc32;
 use num::FromPrimitive;
 
-use bitstream::*;
 use deflate::*;
+use util::*;
 
 #[allow(dead_code)]
 #[repr(u32)]
@@ -60,6 +59,7 @@ impl fmt::Display for Compatibility {
             Compatibility::Amiga => write!(f, "Amiga"),
             Compatibility::OpenVMS => write!(f, "OpenVMS"),
             Compatibility::UNIX => write!(f, "UNIX"),
+            Compatibility::VMCMS => write!(f, "VM/CMS"),
             Compatibility::AtariST => write!(f, "Atari ST"),
             Compatibility::HPFS => write!(f, "OS/2 HPFS"),
             Compatibility::Macintosh => write!(f, "Macintosh"),
@@ -75,7 +75,6 @@ impl fmt::Display for Compatibility {
             Compatibility::Tandem => write!(f, "Tandem"),
             Compatibility::OS400 => write!(f, "OS400"),
             Compatibility::OSX => write!(f, "OSX"),
-            _ => write!(f, "Unknown"),
         }
     }
 }
@@ -317,24 +316,6 @@ struct HuffmanCode {
     map: HashMap<u16, u8>,
 }
 
-fn trans16(a: [u8; 2]) -> u16 {
-    //((a[1] as u16) << 8) | (a[0] as u16)
-    unsafe { transmute(a) }
-}
-
-fn trans32(a: [u8; 4]) -> u32 {
-    //((a[3] as u32) << 24) | ((a[2] as u32) << 16) | ((a[1] as u32) << 8) |
-    //(a[0] as u32)
-    unsafe { transmute(a) }
-}
-
-fn trans64(a: [u8; 8]) -> u64 {
-    //((a[7] as u64) << 56) | ((a[6] as u64) << 48) | ((a[5] as u64) << 40) |
-    //((a[4] as u64) << 32) | ((a[3] as u64) << 24) | ((a[2] as u64) << 16) |
-    //((a[1] as u64) << 8) | (a[0] as u64)
-    unsafe { transmute(a) }
-}
-
 const LFH_SIZE: usize = 2 * 5 + 4 * 3 + 2 * 2;
 
 fn read_lfh(a: [u8; LFH_SIZE]) -> LocalFileHeader {
@@ -463,31 +444,13 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
 
     for (position, lfh) in lfhs {
         try!(reader.seek(Start(position)));
-        let mut v = Vec::<u8>::new();
-        v.resize(lfh.compressed_size as usize, 0);
-        try!(reader.read_exact(&mut v as &mut [u8]));
-        let mut reader = BitReader::new(&v as &[u8]);
-        let last_block_bit = reader.read_bits(1, true).unwrap();
-        if last_block_bit == 1 {
-            debug!("Last Block bit is set");
-        }
-        let block_type = reader.read_bits(2, true).unwrap();
-        let mut v = Vec::new();
-        match block_type {
-            0 => debug!("Block is stored"),
-            1 => {
-                debug!("Fixed Huffman codes");
-                v = inflate(&mut reader, true);
-            }
-            2 => {
-                debug!("Dynamic Huffman codes");
-                v = inflate(&mut reader, false);
-            }
-            3 => debug!("Reserved"),
-            _ => panic!("Unknown error"),
-        }
-        assert_eq!(crc32::checksum_ieee(&v), lfh.crc);
-        debug!("{}", String::from_utf8(v).unwrap());
+        //let mut deflate = Vec::<u8>::new();
+        //deflate.resize(lfh.compressed_size as usize, 0);
+        //try!(reader.read_exact(&mut deflate as &mut [u8]));
+        //let mut out = Vec::<u8>::new();
+        let out = inflate(&mut reader);
+        assert_eq!(crc32::checksum_ieee(&out), lfh.crc);
+        debug!("{}", String::from_utf8(out).unwrap());
     }
     Ok(())
 }
@@ -498,12 +461,12 @@ mod test {
 
     #[test]
     fn fixed_huffman() {
-        let _ = parse("fixed_huffman.zip");
+        assert!(parse("fixed_huffman.zip").unwrap() == ());
     }
 
     #[test]
     fn dynamic_huffman() {
-        let _ = parse("dynamic_huffman.zip");
+        assert!(parse("dynamic_huffman.zip").unwrap() == ());
     }
 }
 

@@ -1,7 +1,9 @@
+use std::io::Read;
+
 pub type Bits = u16;
 
-pub struct BitReader<'a> {
-    buf: &'a[u8],
+pub struct BitReader<'a, R: Read + 'a> {
+    buf: &'a mut R,
     bits: u8,
     acc: u32,
 }
@@ -31,22 +33,18 @@ fn reverse(a: Bits, n: u8) -> Bits {
     return v >> (16 - n);
 }
 
-impl<'a> BitReader<'a> {
-    pub fn new(buf: &'a [u8]) -> BitReader<'a> {
+impl<'a, R: Read> BitReader<'a, R> {
+    pub fn new(buf: &'a mut R) -> BitReader<R> {
         BitReader { buf: buf, bits: 0, acc: 0 }
     }
 
     //order: true for LSB and false for MSB (Huffman codes)
     pub fn read_bits(&mut self, n: u8, order: bool) -> Option<Bits> {
         assert!(n <= 16);
+        let mut bytes: [u8; 1] = [0; 1];
         while self.bits < n {
-            let byte = if self.buf.len() > 0 {
-                let byte = self.buf[0];
-                self.buf = &self.buf[1..];
-                byte
-            } else {
-                return None
-            };
+            let _ = self.buf.read_exact(&mut bytes);
+            let byte = bytes[0];
             self.acc |= (byte as u32) << { self.bits };
             self.bits += 8;
         }

@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use bitstream::*;
 
 const MAXBITS: usize = 15;
@@ -82,7 +84,7 @@ pub fn gen_huffman_dec(lengths: &Vec<u8>, n: u16) -> HuffmanDec {
     HuffmanDec { count: count, symbol: symbol }
 }
 
-pub fn read_code(reader: &mut BitReader, dec: &HuffmanDec) -> Option<u16> {
+pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Option<u16> {
     let mut b = 0;
     let mut bits: Bits = 0;
     let mut index = 0;
