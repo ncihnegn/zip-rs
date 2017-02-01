@@ -1,12 +1,12 @@
 use std::fmt;
 use std::fs::File;
-use std::io::{self, BufReader};
+use std::io::{self, BufReader, BufWriter};
 use std::io::prelude::*;
 
+use crc::crc32::checksum_ieee;
 use num::FromPrimitive;
 
-//use bitstream::*;
-//use deflate::*;
+use deflate::*;
 use util::*;
 
 struct Flags {
@@ -77,7 +77,7 @@ struct GzipMember {
     os: OS,
     crc16: u16,
     crc32: u32,
-    _isize: u32,
+    isize: u32,
 }
 
 pub fn parse(file_name: &str) -> Result<(), io::Error> {
@@ -137,18 +137,22 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
         try!(reader.read_exact(&mut word));
         crc16 = trans16(word);
     }
-    let crc32: u32 = 0;
-    let _isize: u32 = 0;
+    let out = Vec::<u8>::new();
+    let mut writer = BufWriter::new(out);
+    let ret = inflate(&mut reader, &mut writer).unwrap();
+    try!(reader.read_exact(&mut dword));
+    let out = writer.into_inner().unwrap();
+    let crc32: u32 = trans32(dword);
+    try!(reader.read_exact(&mut dword));
+    let isize: u32 = trans32(dword);
+    assert_eq!(ret, isize as usize);
+    debug!("{:08x} {:08x}", checksum_ieee(&out), crc32);
+    assert_eq!(checksum_ieee(&out), crc32);
+    debug!("{}", String::from_utf8(out).unwrap());
 
-    let _ = GzipMember { flg: flg, mtime: mtime, xfl: xfl, os: os, crc16: crc16, crc32: crc32, _isize: 0 };
+    let _ = GzipMember { flg: flg, mtime: mtime, xfl: xfl, os: os, crc16: crc16, crc32: crc32, isize: isize };
     Ok(())
 }
-
-//pub fn extract(file_name: &str) -> Result<(), io::Error> {
-//    let file = try!(File::create(file_name));
-//    let mut buf = BufWriter::with_capacity(32 * 1024, file);
-//    Ok(())
-//}
 
 #[cfg(test)]
 mod test {
@@ -156,6 +160,6 @@ mod test {
 
     #[test]
     fn basic() {
-        assert!(parse("Cargo.zip.gz").unwrap() == ());
+        assert!(parse("Cargo.toml.gz").unwrap() == ());
     }
 }

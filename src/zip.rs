@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
-use std::io::{self, BufReader};
+use std::io::{self, BufReader, BufWriter};
 use std::io::SeekFrom::{Current, Start};
 use std::io::prelude::*;
 use std::string::String;
 use std::vec::Vec;
 
-use crc::crc32;
+use crc::crc32::checksum_ieee;
 use num::FromPrimitive;
 
 use deflate::*;
@@ -447,9 +447,11 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
         //let mut deflate = Vec::<u8>::new();
         //deflate.resize(lfh.compressed_size as usize, 0);
         //try!(reader.read_exact(&mut deflate as &mut [u8]));
-        //let mut out = Vec::<u8>::new();
-        let out = inflate(&mut reader);
-        assert_eq!(crc32::checksum_ieee(&out), lfh.crc);
+        let out = Vec::<u8>::new();
+        let mut writer = BufWriter::new(out);
+        try!(inflate(&mut reader, &mut writer));
+        let out = writer.into_inner().unwrap();
+        assert_eq!(checksum_ieee(&out), lfh.crc);
         debug!("{}", String::from_utf8(out).unwrap());
     }
     Ok(())

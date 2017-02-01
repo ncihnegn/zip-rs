@@ -9,6 +9,5 @@ mod bitstream;
 pub mod deflate;
 pub mod gzip;
 pub mod huffman;
-pub mod zip;
 mod util;
-
+pub mod zip;

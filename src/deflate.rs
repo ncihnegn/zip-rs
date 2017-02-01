@@ -1,11 +1,13 @@
-use std::io::{BufReader, Read};
-//use std::io::SeekFrom::Current;
+use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::iter::FromIterator;
 
 use bitstream::*;
 use huffman::*;
+use util::*;
 
 pub const NUM_LITERAL: u16 = 288;
+pub const MAXIMUM_DISTANCE: usize = 32 * 1024;
+pub const MAXIMUM_LENGTH: usize = 258;
 
 //static fixed_lit_count: Vec<u16> = vec!(0,0,0,0,0,0,280-256,144+288-280,256-244);
 
@@ -16,7 +18,7 @@ fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> u16 {
     } else {
         let extra_bits = (len - 4) / 4;
         let extra = reader.read_bits(extra_bits as u8, true).unwrap();
-        len = 10 + ((1 << (extra_bits + 1)) - 2) * 4 + ((len - 8) % 4) * (1 << extra_bits) + extra;
+        len = 7 + ((1 << (extra_bits + 1)) - 2) * 4 + ((len - 8) % 4) * (1 << extra_bits) + extra;
         debug!("Code: {} Extra Bits: {} Extra Value: {} Length: {}", lit, extra_bits, extra, len);
     }
     len
@@ -114,9 +116,9 @@ pub fn read_fixed_literal<R: Read>(reader: &mut BitReader<R>) -> u16 {
     lit
 }
 
-pub fn inflate<R: Read>(input: &mut BufReader<R>) -> Vec<u8> {
+pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<usize, io::Error> {
+    let mut decompressed_size = 0;
     let mut reader = BitReader::new(input);
-    let mut v = Vec::<u8>::new();//writer = Cursor::new(Vec::new());
     let last_block_bit = reader.read_bits(1, true).unwrap();
     if last_block_bit == 1 {
         debug!("Last Block bit is set");
@@ -135,56 +137,61 @@ pub fn inflate<R: Read>(input: &mut BufReader<R>) -> Vec<u8> {
         3 => debug!("Reserved"),
         _ => panic!("Unknown error"),
     }
-
+    let mut window = Vec::<u8>::with_capacity(MAXIMUM_DISTANCE + MAXIMUM_LENGTH);
     let (lit_dec, dist_dec) = if fixed_huffman { (HuffmanDec::fixed_literal(), HuffmanDec::new()) } else { read_code_table(&mut reader) };
     loop {
         let lit = read_code(&mut reader, &lit_dec).unwrap();
         match lit {
             0...255 => {
-                let mut byte: [u8; 1] = [0; 1];
-                byte[0] = lit as u8;
-                v.push(byte[0]);
+                let byte = lit as u8;
+                if window.len() == MAXIMUM_DISTANCE {
+                    let byte: [u8; 1] = [window.remove(0); 1];
+                    try!(output.write(&byte));
+                }
+                window.push(byte);
                 debug!("lit: {:02x}", lit);
+                decompressed_size += 1;
             }
             256 => break,
             257...285 => {
                 let len = read_length(lit, &mut reader) as usize;
+                assert!(len <= MAXIMUM_LENGTH);
                 let dist_code = if fixed_huffman { reader.read_bits(5, false).unwrap() } else { read_code(&mut reader, &dist_dec).unwrap() };
                 let dist = read_distance(dist_code, &mut reader) as usize;
-                assert!(dist > 0);
-                debug!("{}({}),{} {}", dist, dist_code, len, v.len());
-                debug!("{:?}", v);
-                assert!(dist <= v.len());
+                debug!("{}: {}", decompressed_size, to_hex_string(&window));
+                debug!("{}({}), {} {}", dist, dist_code, len, window.len());
+                assert!(dist > 0 && dist < MAXIMUM_DISTANCE);
+                assert!(dist <= window.len());
+                if window.len() + len > window.capacity() {
+                    let to_write = window.len() + len - window.capacity();
+                    try!(output.write(&window[0..to_write]));
+                    window.drain(0..to_write);
+                }
                 //Fix the case len > dist
                 let mut cur_len = len;
                 if len > dist {
                     cur_len = dist;
                 }
                 let mut copied = 0;
-                //let mut seg: Vec<u8> = vec![0; cur_len];//Vec::new();
-                let mut seg = Vec::from_iter(v[v.len() - dist ..
-                                               v.len() - dist + cur_len]
+                let first = window.len() - dist;
+                let mut seg = Vec::from_iter(window[first..first + cur_len]
                                              .iter().cloned());
-                //seg.resize(cur_len, 0);
-                //TODO: seek
-                //writer.seek(Current(-dist));
-                //writer.read_exact(&mut seg as &mut [u8]);
                 while copied + cur_len <= len {
-                    //writer.write(&seg as &[u8]);
-                    v.extend_from_slice(&seg);
+                    window.extend_from_slice(&seg);
                     copied += cur_len;
                 }
                 if copied < len {
                     cur_len = len - copied;
                     seg.resize(cur_len, 0);
-                    v.extend_from_slice(&seg);
-                    //writer.write(&seg as &[u8]);
+                    window.extend_from_slice(&seg);
                 }
+                decompressed_size += len;
             }
             _ => panic!("Out-of-range literal"),
         }
     }
-    v
+    try!(output.write(window.as_slice()));
+    Ok(decompressed_size)
 }
 
 
