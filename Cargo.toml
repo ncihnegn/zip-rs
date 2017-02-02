@@ -6,6 +6,7 @@ authors = ["ncihnegn"]
 [dependencies]
 crc = "*"
 env_logger = "*"
+lazy_static = "*"
 log = "*"
 num = "*"
 num-derive = "*"

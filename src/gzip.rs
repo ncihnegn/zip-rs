@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Error, ErrorKind};
 use std::io::prelude::*;
 
 use crc::crc32::checksum_ieee;
@@ -17,7 +17,6 @@ struct Flags {
     fcomment: bool,
 }
 
-#[allow(dead_code)]
 #[repr(u8)]
 #[derive(FromPrimitive)]
 enum ExtraFlags {
@@ -26,7 +25,6 @@ enum ExtraFlags {
     Fastest = 4,
 }
 
-#[allow(dead_code)]
 #[repr(u8)]
 #[derive(FromPrimitive)]
 enum OS {
@@ -80,7 +78,7 @@ struct GzipMember {
     isize: u32,
 }
 
-pub fn parse(file_name: &str) -> Result<(), io::Error> {
+pub fn parse(file_name: &str) -> Result<(), Error> {
     let file = try!(File::open(file_name));
     let mut reader = BufReader::new(file);
     let mut byte: [u8; 1] = [0; 1];
@@ -112,9 +110,16 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
     try!(reader.read_exact(&mut dword));
     let mtime = trans32(dword);
     try!(reader.read_exact(&mut byte));
-    let xfl = FromPrimitive::from_u8(byte[0]).unwrap();
+    let xfl = match ExtraFlags::from_u8(byte[0]) {
+        Some(x) => x,
+        None => return Err(Error::new(ErrorKind::Other, "Bad XFL")),
+    };
+
     try!(reader.read_exact(&mut byte));
-    let os = FromPrimitive::from_u8(byte[0]).unwrap();
+    let os = match OS::from_u8(byte[0]) {
+        Some(x) => x,
+        None => return Err(Error::new(ErrorKind::Other, "Bad XFL")),
+    };
     let mut extra = Vec::<u8>::new();
     if flg.fextra {
         try!(reader.read_exact(&mut word));
@@ -126,11 +131,11 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
     if flg.fname {
         try!(reader.read_until(0, &mut file_name));
     }
-    debug!("File name: {}", String::from_utf8(file_name).unwrap());
+    debug!("File name: {:?}", String::from_utf8(file_name));
     let mut file_comment = Vec::<u8>::new();
     if flg.fcomment {
         try!(reader.read_until(0, &mut file_comment));
-        debug!("File comment: {}", String::from_utf8(file_comment).unwrap());
+        debug!("File comment: {:?}", String::from_utf8(file_comment));
     }
     let mut crc16: u16 = 0;
     if flg.fhcrc {
@@ -139,16 +144,19 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
     }
     let out = Vec::<u8>::new();
     let mut writer = BufWriter::new(out);
-    let ret = inflate(&mut reader, &mut writer).unwrap();
+    let ret = try!(inflate(&mut reader, &mut writer));
     try!(reader.read_exact(&mut dword));
-    let out = writer.into_inner().unwrap();
+    let out = match writer.into_inner() {
+        Ok(x) => x,
+        Err(_) => return Err(Error::new(ErrorKind::Other, "Can't get the inner output")),
+    };
     let crc32: u32 = trans32(dword);
     try!(reader.read_exact(&mut dword));
     let isize: u32 = trans32(dword);
     assert_eq!(ret, isize as usize);
     debug!("{:08x} {:08x}", checksum_ieee(&out), crc32);
     assert_eq!(checksum_ieee(&out), crc32);
-    debug!("{}", String::from_utf8(out).unwrap());
+    debug!("{:?}", String::from_utf8(out));
 
     let _ = GzipMember { flg: flg, mtime: mtime, xfl: xfl, os: os, crc16: crc16, crc32: crc32, isize: isize };
     Ok(())
@@ -160,6 +168,6 @@ mod test {
 
     #[test]
     fn basic() {
-        assert!(parse("Cargo.toml.gz").unwrap() == ());
+        assert!(parse("Cargo.toml.gz").is_ok());
     }
 }

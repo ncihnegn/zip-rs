@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Error, ErrorKind};
 use std::io::SeekFrom::{Current, Start};
 use std::io::prelude::*;
 use std::string::String;
@@ -13,7 +13,6 @@ use num::FromPrimitive;
 use deflate::*;
 use util::*;
 
-#[allow(dead_code)]
 #[repr(u32)]
 #[derive(FromPrimitive)]
 enum Signature {
@@ -26,7 +25,6 @@ enum Signature {
     ECDR = 0x06054b50,
 }
 
-#[allow(dead_code)]
 #[repr(u8)]
 #[derive(FromPrimitive)]
 enum Compatibility {
@@ -79,22 +77,17 @@ impl fmt::Display for Compatibility {
     }
 }
 
-#[allow(dead_code)]
 struct Version {
     compatibility: Compatibility,
     major: u8,
     minor: u8,
 }
 
-#[allow(dead_code)]
 impl Version {
-    pub fn new() -> Version {
-        Version { compatibility: FromPrimitive::from_u8(0).unwrap(),
-                  major: 4, minor: 1 }
-    }
-    pub fn from(a: &[u8]) -> Version {
-        Version { compatibility: FromPrimitive::from_u8(a[1]).unwrap(),
-                  major: a[0] % (1 << 4), minor: a[0] >> 4 }
+    pub fn from(a: &[u8]) -> Option<Version> {
+        Compatibility::from_u8(a[1]).map(|x|
+            Version { compatibility: x, major: a[0] % (1 << 4),
+                                 minor: a[0] >> 4 })
     }
 }
 
@@ -104,7 +97,6 @@ impl fmt::Display for Version {
     }
 }
 
-#[allow(dead_code)]
 #[repr(u16)]
 #[derive(FromPrimitive)]
 enum CompressionMethod {
@@ -165,9 +157,7 @@ impl fmt::Display for CompressionMethod {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug,FromPrimitive)]
-//#[derive(Debug)]
+#[derive(Debug, FromPrimitive)]
 enum DeflateOption {
     Normal = 0,
     Maximum = 1,
@@ -186,7 +176,6 @@ impl fmt::Display for DeflateOption {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 enum CompressionOption {
     Implode {
@@ -203,8 +192,7 @@ impl CompressionOption {
             CompressionMethod::Implode => Some(CompressionOption::Implode{
                 dictionary_size: a & 2 == 2, trees: a & 1 == 1 }),
             CompressionMethod::Deflate | CompressionMethod::Deflate64 =>
-                Some(CompressionOption::Deflate(
-                    FromPrimitive::from_u8(a).unwrap())),
+                DeflateOption::from_u8(a).map(|x| CompressionOption::Deflate(x)),
             CompressionMethod::LZMA => Some(
                 CompressionOption::LZMA(a & 1 == 1)),
             _ => None
@@ -223,7 +211,6 @@ impl fmt::Display for CompressionOption {
     }
 }
 
-#[allow(dead_code)]
 struct GPBF {
     encrypted: bool,
     compression_option: Option<CompressionOption>,
@@ -318,17 +305,22 @@ struct HuffmanCode {
 
 const LFH_SIZE: usize = 2 * 5 + 4 * 3 + 2 * 2;
 
-fn read_lfh(a: [u8; LFH_SIZE]) -> LocalFileHeader {
+fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
     let mut reader = BufReader::new(&a[..]);
     let mut word: [u8; 2] = [0; 2];
     let mut dword: [u8; 4] = [0; 4];
-    let _ = reader.read_exact(&mut word);
-    let version = Version::from(&word);
+    try!(reader.read_exact(&mut word));
+    let version = match Version::from(&word) {
+        Some(x) => x,
+        None => return Err(Error::new(ErrorKind::Other, "Bad version in LFH"))
+    };
     let _ = reader.read_exact(&mut word);
     let tmp = word.clone();
     let _ = reader.read_exact(&mut word);
-    let method: CompressionMethod =
-        FromPrimitive::from_u16(trans16(word)).unwrap();
+    let method = match CompressionMethod::from_u16(trans16(word)) {
+        Some(x) => x,
+        None => return Err(Error::new(ErrorKind::Other, "Bad compression method in LFH"))
+    };
     let gpbf = GPBF::new(&tmp, &method);
     let _ = reader.read_exact(&mut word);
     let time: u16 = trans16(word);
@@ -344,7 +336,7 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> LocalFileHeader {
     let file_name_length: u16 = trans16(word);
     let _ = reader.read_exact(&mut word);
     let extra_field_length: u16 = trans16(word);
-    LocalFileHeader { file_name: String::new(),
+    Ok(LocalFileHeader { file_name: String::new(),
                       version_needed_to_extract: version,
                       general_purpose_bit_flag: gpbf,
                       compression_method: method,
@@ -354,10 +346,10 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> LocalFileHeader {
                       last_mod_file_time: time,
                       last_mod_file_date: date,
                       file_name_length: file_name_length,
-                      extra_field_length: extra_field_length }
+                      extra_field_length: extra_field_length })
 }
 
-pub fn parse(file_name: &str) -> Result<(), io::Error> {
+pub fn parse(file_name: &str) -> Result<(), Error> {
     let file = try!(File::open(file_name));
     let mut reader = BufReader::new(file);
     let mut word: [u8; 2] = [0; 2];
@@ -368,14 +360,13 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
     let mut cfh_counter = 0;
     let mut lfhs: HashMap<u64, LocalFileHeader> = HashMap::new();
     while reader.read_exact(&mut dword).is_ok() {
-        let signature: Signature =
-            FromPrimitive::from_u32(trans32(dword)).unwrap();
+        let signature = Signature::from_u32(trans32(dword));
         match signature {
-            Signature::LFH => {
+            Some(Signature::LFH) => {
                 lfh_counter += 1;
                 debug!("local file header {} ", lfh_counter);
                 try!(reader.read_exact(&mut lfh_array));
-                let mut lfh = read_lfh(lfh_array);
+                let mut lfh = try!(read_lfh(lfh_array));
                 let mut v = Vec::<u8>::new();
                 v.resize(lfh.file_name_length as usize, 0);
                 try!(reader.read_exact(&mut v as &mut [u8]));
@@ -387,13 +378,16 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
                 debug!("{}", lfh);
                 lfhs.insert(position, lfh);
             }
-            Signature::CFH => {
+            Some(Signature::CFH) => {
                 cfh_counter += 1;
                 debug!("central file header {}", cfh_counter);
                 try!(reader.read_exact(&mut word));
-                let version_made_by = Version::from(&word);
+                let version_made_by = match Version::from(&word) {
+                    Some(x) => x,
+                    None => return Err(Error::new(ErrorKind::Other, "Bad version made by"))
+                };
                 try!(reader.read_exact(&mut lfh_array));
-                let mut lfh = read_lfh(lfh_array);
+                let mut lfh = try!(read_lfh(lfh_array));
                 try!(reader.read_exact(&mut word));
                 let file_comment_length: u16 = trans16(word);
                 try!(reader.read_exact(&mut word));
@@ -419,17 +413,17 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
                     lfh: lfh };
                 debug!("{}", cfh);
             }
-            Signature::ECDR64 => {
+            Some(Signature::ECDR64) => {
                 debug!("Zip64 end of central directory record");
                 try!(reader.read_exact(&mut qword));
                 let size: u64 = trans64(qword);
                 try!(reader.seek(Current(size as i64)));
             }
-            Signature::ECDL64 => {
+            Some(Signature::ECDL64) => {
                 debug!("Zip64 end of central directory locator");
                 try!(reader.seek(Current(4 + 8 + 4)));
             }
-            Signature::ECDR => {
+            Some(Signature::ECDR) => {
                 debug!("end of central directory record");
                 try!(reader.seek(Current(2 * 4 + 4 * 2)));
                 try!(reader.read_exact(&mut word));
@@ -437,22 +431,22 @@ pub fn parse(file_name: &str) -> Result<(), io::Error> {
                 try!(reader.seek(Current(file_comment_length as i64)));
             }
             _ => {
-                panic!("unknown signature 0x{:08x}", signature as i32);
+                return Err(Error::new(ErrorKind::Other, "Bad signature"));
             }
         }
     }
 
     for (position, lfh) in lfhs {
         try!(reader.seek(Start(position)));
-        //let mut deflate = Vec::<u8>::new();
-        //deflate.resize(lfh.compressed_size as usize, 0);
-        //try!(reader.read_exact(&mut deflate as &mut [u8]));
         let out = Vec::<u8>::new();
         let mut writer = BufWriter::new(out);
         try!(inflate(&mut reader, &mut writer));
-        let out = writer.into_inner().unwrap();
+        let out = match writer.into_inner() {
+            Ok(x) => x,
+            Err(_) => return Err(Error::new(ErrorKind::Other, "Can't get the inner output")),
+        };
         assert_eq!(checksum_ieee(&out), lfh.crc);
-        debug!("{}", String::from_utf8(out).unwrap());
+        debug!("{:?}", String::from_utf8(out));
     }
     Ok(())
 }
@@ -463,12 +457,12 @@ mod test {
 
     #[test]
     fn fixed_huffman() {
-        assert!(parse("fixed_huffman.zip").unwrap() == ());
+        assert!(parse("fixed_huffman.zip").is_ok());
     }
 
     #[test]
     fn dynamic_huffman() {
-        assert!(parse("dynamic_huffman.zip").unwrap() == ());
+        assert!(parse("dynamic_huffman.zip").is_ok());
     }
 }
 

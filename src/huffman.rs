@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Error, ErrorKind,Read};
 
 use bitstream::*;
 
@@ -15,7 +15,7 @@ impl HuffmanDec {
         HuffmanDec { count: Vec::new(), symbol: Vec::new() }
     }
 
-    pub fn fixed_literal() -> HuffmanDec {
+    pub fn fixed_literal_dec() -> HuffmanDec {
         let count: Vec<u16> = vec![0,0,0,0,0,0,0,280-256,144+288-280,256-144];
         let mut symbol: Vec<u16> = (256..280).collect();
         let mut len8 = (0..144).collect();
@@ -84,7 +84,7 @@ pub fn gen_huffman_dec(lengths: &Vec<u8>, n: u16) -> HuffmanDec {
     HuffmanDec { count: count, symbol: symbol }
 }
 
-pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Option<u16> {
+pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result<u16, Error> {
     let mut b = 0;
     let mut bits: Bits = 0;
     let mut index = 0;
@@ -98,16 +98,15 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Option
         }
         bits <<= e;
         first <<= e;
-        bits |= reader.read_bits(e, false).unwrap();
+        bits |= try!(reader.read_bits(e, false));
         let count = dec.count[b];
         if bits >= first && bits < first + count {
-            return Some(dec.symbol[(index + bits - first) as usize]);
+            return Ok(dec.symbol[(index + bits - first) as usize]);
         }
         index += count;
         first += count;
     }
-    //panic!("Illegal Huffman code");
-    None
+    Err(Error::new(ErrorKind::Other, "Illegal Huffman code"))
 }
 
 #[cfg(test)]
