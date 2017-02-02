@@ -28,7 +28,7 @@ enum Signature {
 
 #[repr(u8)]
 #[derive(FromPrimitive)]
-enum Compatibility {
+enum Compat {
     FAT = 0,
     Amiga = 1,
     OpenVMS = 2,
@@ -51,42 +51,42 @@ enum Compatibility {
     OSX = 19,
 }
 
-impl fmt::Display for Compatibility {
+impl fmt::Display for Compat {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Compatibility::FAT => write!(f, "FAT/VFAT/FAT32"),
-            Compatibility::Amiga => write!(f, "Amiga"),
-            Compatibility::OpenVMS => write!(f, "OpenVMS"),
-            Compatibility::UNIX => write!(f, "UNIX"),
-            Compatibility::VMCMS => write!(f, "VM/CMS"),
-            Compatibility::AtariST => write!(f, "Atari ST"),
-            Compatibility::HPFS => write!(f, "OS/2 HPFS"),
-            Compatibility::Macintosh => write!(f, "Macintosh"),
-            Compatibility::ZSystem => write!(f, "Z-System"),
-            Compatibility::CPM => write!(f, "CP/M"),
-            Compatibility::NTFS => write!(f, "Windows NTFS"),
-            Compatibility::MVS => write!(f, "MVS (OS/390 -Z/OS)"),
-            Compatibility::VSE => write!(f, "VSE"),
-            Compatibility::AcornRisc => write!(f, "Acron Risc"),
-            Compatibility::VFAT => write!(f, "VFAT"),
-            Compatibility::AlternateMVS => write!(f, "alterate MVS"),
-            Compatibility::BeOS => write!(f, "BeOS"),
-            Compatibility::Tandem => write!(f, "Tandem"),
-            Compatibility::OS400 => write!(f, "OS400"),
-            Compatibility::OSX => write!(f, "OSX"),
+            Compat::FAT => write!(f, "FAT/VFAT/FAT32"),
+            Compat::Amiga => write!(f, "Amiga"),
+            Compat::OpenVMS => write!(f, "OpenVMS"),
+            Compat::UNIX => write!(f, "UNIX"),
+            Compat::VMCMS => write!(f, "VM/CMS"),
+            Compat::AtariST => write!(f, "Atari ST"),
+            Compat::HPFS => write!(f, "OS/2 HPFS"),
+            Compat::Macintosh => write!(f, "Macintosh"),
+            Compat::ZSystem => write!(f, "Z-System"),
+            Compat::CPM => write!(f, "CP/M"),
+            Compat::NTFS => write!(f, "Windows NTFS"),
+            Compat::MVS => write!(f, "MVS (OS/390 -Z/OS)"),
+            Compat::VSE => write!(f, "VSE"),
+            Compat::AcornRisc => write!(f, "Acron Risc"),
+            Compat::VFAT => write!(f, "VFAT"),
+            Compat::AlternateMVS => write!(f, "alterate MVS"),
+            Compat::BeOS => write!(f, "BeOS"),
+            Compat::Tandem => write!(f, "Tandem"),
+            Compat::OS400 => write!(f, "OS400"),
+            Compat::OSX => write!(f, "OSX"),
         }
     }
 }
 
 struct Version {
-    compatibility: Compatibility,
+    compatibility: Compat,
     major: u8,
     minor: u8,
 }
 
 impl Version {
-    pub fn from(a: &[u8]) -> Option<Version> {
-        Compatibility::from_u8(a[1]).map(|x|
+    pub fn from_word(a: &[u8; 2]) -> Option<Version> {
+        Compat::from_u8(a[1]).map(|x|
             Version { compatibility: x, major: a[0] % (1 << 4),
                                  minor: a[0] >> 4 })
     }
@@ -100,7 +100,7 @@ impl fmt::Display for Version {
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
-enum CompressionMethod {
+enum CompMethod {
     Store = 0,
     Shrink = 1,
     ReduceFactor1 = 2,
@@ -111,7 +111,7 @@ enum CompressionMethod {
     Tokenize = 7,
     Deflate = 8,
     Deflate64 = 9,
-    TERSEOld = 10,
+    TerseOld = 10,
     Reserved11 = 11,
     BZIP2 = 12,
     Reserved13 = 13,
@@ -119,41 +119,41 @@ enum CompressionMethod {
     Reserved15 = 15,
     Reserved16 = 16,
     Reserved17 = 17,
-    TERSENew = 18,
+    TerseNew = 18,
     LZ77z = 19,
     WavPack = 97,
     PPMd = 98,
 }
 
-impl fmt::Display for CompressionMethod {
+impl fmt::Display for CompMethod {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            CompressionMethod::Store => write!(f, "Store"),
-            CompressionMethod::Shrink => write!(f, "Shrink"),
-            CompressionMethod::ReduceFactor1 =>
+            CompMethod::Store => write!(f, "Store"),
+            CompMethod::Shrink => write!(f, "Shrink"),
+            CompMethod::ReduceFactor1 =>
                 write!(f, "Reduce with Compression Factor 1"),
-            CompressionMethod::ReduceFactor2 =>
+            CompMethod::ReduceFactor2 =>
                 write!(f, "Reduce with Compression Factor 2"),
-            CompressionMethod::ReduceFactor3 =>
+            CompMethod::ReduceFactor3 =>
                 write!(f, "Reduce with Compression Factor 3"),
-            CompressionMethod::ReduceFactor4 =>
+            CompMethod::ReduceFactor4 =>
                 write!(f, "Reduce with Compression Factor 4"),
-            CompressionMethod::Implode => write!(f, "Implode"),
-            CompressionMethod::Tokenize => write!(f, "Tokenize"),
-            CompressionMethod::Deflate => write!(f, "Deflate"),
-            CompressionMethod::Deflate64 => write!(f, "Deflate64"),
-            CompressionMethod::TERSEOld => write!(f, "IBM TERSE (old)"),
-            CompressionMethod::Reserved11 => write!(f, "Reserved11"),
-            CompressionMethod::BZIP2 => write!(f, "BZIP2"),
-            CompressionMethod::Reserved13 => write!(f, "Reserved13"),
-            CompressionMethod::LZMA => write!(f, "LZMA"),
-            CompressionMethod::Reserved15 => write!(f, "Reserved15"),
-            CompressionMethod::Reserved16 => write!(f, "Reserved16"),
-            CompressionMethod::Reserved17 => write!(f, "Reserved17"),
-            CompressionMethod::TERSENew => write!(f, "IBM TERSE (new)"),
-            CompressionMethod::LZ77z => write!(f, "IBM LZ77 z Architecture"),
-            CompressionMethod::WavPack => write!(f, "WavPack"),
-            CompressionMethod::PPMd => write!(f, "PPMd"),
+            CompMethod::Implode => write!(f, "Implode"),
+            CompMethod::Tokenize => write!(f, "Tokenize"),
+            CompMethod::Deflate => write!(f, "Deflate"),
+            CompMethod::Deflate64 => write!(f, "Deflate64"),
+            CompMethod::TerseOld => write!(f, "IBM TERSE (old)"),
+            CompMethod::Reserved11 => write!(f, "Reserved11"),
+            CompMethod::BZIP2 => write!(f, "BZIP2"),
+            CompMethod::Reserved13 => write!(f, "Reserved13"),
+            CompMethod::LZMA => write!(f, "LZMA"),
+            CompMethod::Reserved15 => write!(f, "Reserved15"),
+            CompMethod::Reserved16 => write!(f, "Reserved16"),
+            CompMethod::Reserved17 => write!(f, "Reserved17"),
+            CompMethod::TerseNew => write!(f, "IBM TERSE (new)"),
+            CompMethod::LZ77z => write!(f, "IBM LZ77 z Architecture"),
+            CompMethod::WavPack => write!(f, "WavPack"),
+            CompMethod::PPMd => write!(f, "PPMd"),
         }
     }
 }
@@ -178,7 +178,7 @@ impl fmt::Display for DeflateOption {
 }
 
 #[derive(Debug)]
-enum CompressionOption {
+enum CompOption {
     Implode {
         dictionary_size: bool,
         trees: bool,
@@ -187,34 +187,34 @@ enum CompressionOption {
     LZMA(bool),
 }
 
-impl CompressionOption {
-    fn new(a: u8, method: &CompressionMethod) -> Option<CompressionOption> {
+impl CompOption {
+    fn new(a: u8, method: &CompMethod) -> Option<CompOption> {
         match *method {
-            CompressionMethod::Implode => Some(CompressionOption::Implode{
+            CompMethod::Implode => Some(CompOption::Implode{
                 dictionary_size: a & 2 == 2, trees: a & 1 == 1 }),
-            CompressionMethod::Deflate | CompressionMethod::Deflate64 =>
-                DeflateOption::from_u8(a).map(|x| CompressionOption::Deflate(x)),
-            CompressionMethod::LZMA => Some(
-                CompressionOption::LZMA(a & 1 == 1)),
+            CompMethod::Deflate | CompMethod::Deflate64 =>
+                DeflateOption::from_u8(a).map(|x| CompOption::Deflate(x)),
+            CompMethod::LZMA => Some(
+                CompOption::LZMA(a & 1 == 1)),
             _ => None
         }
     }
 }
 
-impl fmt::Display for CompressionOption {
+impl fmt::Display for CompOption {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            CompressionOption::Implode { dictionary_size, trees } =>
+            CompOption::Implode { dictionary_size, trees } =>
                 write!(f, "{}-{}", dictionary_size, trees),
-            CompressionOption::Deflate(ref option) => write!(f, "{}", option),
-            CompressionOption::LZMA(option) => write!(f, "{}", option),
+            CompOption::Deflate(ref option) => write!(f, "{}", option),
+            CompOption::LZMA(option) => write!(f, "{}", option),
         }
     }
 }
 
 struct GPBF {
     encrypted: bool,
-    compression_option: Option<CompressionOption>,
+    compression_option: Option<CompOption>,
     crc: bool,
     enhanced_deflating: bool,
     patched_data: bool,
@@ -225,8 +225,8 @@ struct GPBF {
 }
 
 impl GPBF {
-    fn new(a: &[u8], method: &CompressionMethod) -> GPBF {
-        let option = CompressionOption::new(a[0] >> 1, method);
+    fn new(a: &[u8], method: &CompMethod) -> GPBF {
+        let option = CompOption::new(a[0] >> 1, method);
         GPBF { encrypted: a[0] == 1, compression_option: option,
                crc: a[0] & (1 << 3) == 1 << 3,
                enhanced_deflating: a[0] & (1 << 4) == 1 << 4,
@@ -252,7 +252,7 @@ struct LocalFileHeader {
     file_name: String,
     version_needed_to_extract: Version,
     general_purpose_bit_flag: GPBF,
-    compression_method: CompressionMethod,
+    compression_method: CompMethod,
     compressed_size: u32,
     uncompressed_size: u32,
     crc: u32,
@@ -311,14 +311,14 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
     let mut word: [u8; 2] = [0; 2];
     let mut dword: [u8; 4] = [0; 4];
     try!(reader.read_exact(&mut word));
-    let version = match Version::from(&word) {
+    let version = match Version::from_word(&word) {
         Some(x) => x,
         None => return Err(Error::new(ErrorKind::Other, "Bad version in LFH"))
     };
     let _ = reader.read_exact(&mut word);
     let tmp = word.clone();
     let _ = reader.read_exact(&mut word);
-    let method = match CompressionMethod::from_u16(trans16(word)) {
+    let method = match CompMethod::from_u16(trans16(word)) {
         Some(x) => x,
         None => return Err(Error::new(ErrorKind::Other, "Bad compression method in LFH"))
     };
@@ -383,7 +383,7 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
                 cfh_counter += 1;
                 debug!("central file header {}", cfh_counter);
                 try!(reader.read_exact(&mut word));
-                let version_made_by = match Version::from(&word) {
+                let version_made_by = match Version::from_word(&word) {
                     Some(x) => x,
                     None => return Err(Error::new(ErrorKind::Other, "Bad version made by"))
                 };
@@ -441,7 +441,10 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
         try!(reader.seek(Start(position)));
         let out = Vec::<u8>::new();
         let mut writer = BufWriter::new(out);
-        try!(inflate(&mut reader, &mut writer));
+        match lfh.compression_method {
+            CompMethod::Deflate => try!(inflate(&mut reader, &mut writer)),
+            _ => return Err(Error::new(ErrorKind::Other, "Unsupported compression method")),
+        }
         let out = match writer.into_inner() {
             Ok(x) => x,
             Err(_) => return Err(Error::new(ErrorKind::Other, "Can't get the inner output")),

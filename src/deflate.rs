@@ -119,7 +119,7 @@ pub fn read_fixed_literal<R: Read>(reader: &mut BitReader<R>) -> u16 {
     lit
 }
 
-pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<usize, Error> {
+pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<(), Error> {
     let mut decompressed_size = 0;
     let mut reader = BitReader::new(input);
     let last_block_bit = try!(reader.read_bits(1, true));
@@ -195,6 +195,6 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         }
     }
     try!(output.write(window.as_slice()));
-    Ok(decompressed_size)
+    Ok(())
 }
 

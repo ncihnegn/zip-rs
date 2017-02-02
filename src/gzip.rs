@@ -145,7 +145,7 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
     }
     let out = Vec::<u8>::new();
     let mut writer = BufWriter::new(out);
-    let ret = try!(inflate(&mut reader, &mut writer));
+    try!(inflate(&mut reader, &mut writer));
     try!(reader.read_exact(&mut dword));
     let out = match writer.into_inner() {
         Ok(x) => x,
@@ -154,7 +154,7 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
     let crc32: u32 = trans32(dword);
     try!(reader.read_exact(&mut dword));
     let isize: u32 = trans32(dword);
-    assert_eq!(ret, isize as usize);
+    //assert_eq!(ret, isize as usize);
     debug!("{:08x} {:08x}", checksum_ieee(&out), crc32);
     assert_eq!(checksum_ieee(&out), crc32);
     debug!("\n{}", str::from_utf8(&out).unwrap());
