@@ -2,6 +2,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Error, ErrorKind};
 use std::io::prelude::*;
+use std::str;
 
 use crc::crc32::checksum_ieee;
 use num::FromPrimitive;
@@ -131,11 +132,11 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
     if flg.fname {
         try!(reader.read_until(0, &mut file_name));
     }
-    debug!("File name: {:?}", String::from_utf8(file_name));
+    debug!("File name: {}", str::from_utf8(&file_name).unwrap());
     let mut file_comment = Vec::<u8>::new();
     if flg.fcomment {
         try!(reader.read_until(0, &mut file_comment));
-        debug!("File comment: {:?}", String::from_utf8(file_comment));
+        debug!("File comment: {}", str::from_utf8(&file_comment).unwrap());
     }
     let mut crc16: u16 = 0;
     if flg.fhcrc {
@@ -156,7 +157,7 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
     assert_eq!(ret, isize as usize);
     debug!("{:08x} {:08x}", checksum_ieee(&out), crc32);
     assert_eq!(checksum_ieee(&out), crc32);
-    debug!("{:?}", String::from_utf8(out));
+    debug!("\n{}", str::from_utf8(&out).unwrap());
 
     let _ = GzipMember { flg: flg, mtime: mtime, xfl: xfl, os: os, crc16: crc16, crc32: crc32, isize: isize };
     Ok(())

@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Error, ErrorKind};
 use std::io::SeekFrom::{Current, Start};
 use std::io::prelude::*;
+use std::str;
 use std::string::String;
 use std::vec::Vec;
 
@@ -446,7 +447,7 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
             Err(_) => return Err(Error::new(ErrorKind::Other, "Can't get the inner output")),
         };
         assert_eq!(checksum_ieee(&out), lfh.crc);
-        debug!("{:?}", String::from_utf8(out));
+        debug!("\n{}", str::from_utf8(&out).unwrap());
     }
     Ok(())
 }
