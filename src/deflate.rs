@@ -21,7 +21,7 @@ fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> Result<u16, Erro
     } else {
         let extra_bits = (len - 4) / 4;
         let extra = try!(reader.read_bits(extra_bits as u8, true));
-        len = 7 + ((1 << (extra_bits + 1)) - 2) * 4 + ((len - 8) % 4) * (1 << extra_bits) + extra;
+        len = (1 << extra_bits) * 4 + 3 + ((len - 8) % 4) * (1 << extra_bits) + extra;
         debug!("Code: {} Extra Bits: {} Extra Value: {} Length: {}", lit, extra_bits, extra, len);
     }
     Ok(len)
