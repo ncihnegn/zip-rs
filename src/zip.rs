@@ -481,17 +481,17 @@ mod test {
 
     #[test]
     fn store() {
-        assert!(parse("store.zip").is_ok());
+        assert!(parse("test/store.zip").is_ok());
     }
 
     #[test]
     fn fixed_huffman() {
-        assert!(parse("fixed_huffman.zip").is_ok());
+        assert!(parse("test/fixed_huffman.zip").is_ok());
     }
 
     #[test]
     fn dynamic_huffman() {
-        assert!(parse("dynamic_huffman.zip").is_ok());
+        assert!(parse("test/dynamic_huffman.zip").is_ok());
     }
 }
 

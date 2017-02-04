@@ -168,6 +168,6 @@ mod test {
 
     #[test]
     fn basic() {
-        assert!(parse("Cargo.toml.gz").is_ok());
+        assert!(parse("test/dynamic_huffman.gz").is_ok());
     }
 }
