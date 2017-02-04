@@ -8,7 +8,6 @@ use std::str;
 use std::string::String;
 use std::vec::Vec;
 
-use crc::crc32::checksum_ieee;
 use num::FromPrimitive;
 
 use deflate::*;
@@ -442,14 +441,18 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
         let out = Vec::<u8>::new();
         let mut writer = BufWriter::new(out);
         match lfh.compression_method {
-            CompMethod::Deflate => try!(inflate(&mut reader, &mut writer)),
+            CompMethod::Store => return Err(Error::new(ErrorKind::Other, "Store not supported")),
+            CompMethod::Deflate => {
+                let (decompressed_size, checksum) = try!(inflate(&mut reader, &mut writer));
+                assert_eq!(decompressed_size, lfh.uncompressed_size);
+                assert_eq!(checksum, lfh.crc);
+            }
             _ => return Err(Error::new(ErrorKind::Other, "Unsupported compression method")),
         }
         let out = match writer.into_inner() {
             Ok(x) => x,
             Err(_) => return Err(Error::new(ErrorKind::Other, "Can't get the inner output")),
         };
-        assert_eq!(checksum_ieee(&out), lfh.crc);
         debug!("\n{}", str::from_utf8(&out).unwrap());
     }
     Ok(())

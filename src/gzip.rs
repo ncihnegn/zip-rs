@@ -4,7 +4,6 @@ use std::io::{BufReader, BufWriter, Error, ErrorKind};
 use std::io::prelude::*;
 use std::str;
 
-use crc::crc32::checksum_ieee;
 use num::FromPrimitive;
 
 use deflate::*;
@@ -145,7 +144,7 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
     }
     let out = Vec::<u8>::new();
     let mut writer = BufWriter::new(out);
-    try!(inflate(&mut reader, &mut writer));
+    let (decompressed_size, crc) = try!(inflate(&mut reader, &mut writer));
     try!(reader.read_exact(&mut dword));
     let out = match writer.into_inner() {
         Ok(x) => x,
@@ -154,9 +153,9 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
     let crc32: u32 = trans32(dword);
     try!(reader.read_exact(&mut dword));
     let isize: u32 = trans32(dword);
-    //assert_eq!(ret, isize as usize);
-    debug!("{:08x} {:08x}", checksum_ieee(&out), crc32);
-    assert_eq!(checksum_ieee(&out), crc32);
+    debug!("{}({:08x}), expected {}({:08x})", decompressed_size, crc, isize, crc32);
+    assert_eq!(decompressed_size, isize);
+    assert_eq!(crc, crc32);
     debug!("\n{}", str::from_utf8(&out).unwrap());
 
     let _ = GzipMember { flg: flg, mtime: mtime, xfl: xfl, os: os, crc16: crc16, crc32: crc32, isize: isize };

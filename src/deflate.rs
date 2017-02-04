@@ -1,6 +1,9 @@
 use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Write};
 use std::iter::FromIterator;
 
+use crc::crc32::{Digest, Hasher32, IEEE};
+use num::FromPrimitive;
+
 use bitstream::*;
 use huffman::*;
 use util::*;
@@ -8,6 +11,14 @@ use util::*;
 pub const NUM_LITERAL: u16 = 288;
 pub const MAXIMUM_DISTANCE: usize = 32 * 1024;
 pub const MAXIMUM_LENGTH: usize = 258;
+
+#[repr(u8)]
+#[derive(FromPrimitive)]
+enum BlockType {
+    Store = 0,
+    FixedHuffman = 1,
+    DynamicHuffman = 2,
+}
 
 //static fixed_lit_count: Vec<u16> = vec!(0,0,0,0,0,0,280-256,144+288-280,256-244);
 lazy_static! {
@@ -119,46 +130,60 @@ pub fn read_fixed_literal<R: Read>(reader: &mut BitReader<R>) -> u16 {
     lit
 }
 
-pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<(), Error> {
-    let mut decompressed_size = 0;
+pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<(u32, u32), Error> {
+    let mut decompressed_size: u32 = 0;
     let mut reader = BitReader::new(input);
     let last_block_bit = try!(reader.read_bits(1, true));
     if last_block_bit == 1 {
-        debug!("Last Block bit is set");
+        debug!("Last Block");
     }
-    let block_type = try!(reader.read_bits(2, true));
-    let mut fixed_huffman = false;
+    let block_type = BlockType::from_u8(try!(reader.read_bits(2, true)) as u8);
+    let mut hasher = Digest::new(IEEE);
+    let mut dec = (HuffmanDec::new(), HuffmanDec::new());
     match block_type {
-        0 => debug!("Block is stored"),
-        1 => {
-            debug!("Fixed Huffman codes");
-            fixed_huffman = true;
+        Some(BlockType::Store) => debug!("Store"),
+        Some(BlockType::FixedHuffman) => debug!("Fixed Huffman codes"),
+        Some(BlockType::DynamicHuffman) => {
+            debug!("Dynamic Huffman codes");
+            dec = try!(read_code_table(&mut reader));
         }
-        2 => debug!("Dynamic Huffman codes"),
-        _ => {
-            return Err(Error::new(ErrorKind::Other, "Bad block type"));
-        }
+        _ => return Err(Error::new(ErrorKind::Other, "Bad block type"))
     }
+    let block_type = block_type.unwrap();
     let mut window = Vec::<u8>::with_capacity(MAXIMUM_DISTANCE + MAXIMUM_LENGTH);
-    let (lit_dec, dist_dec) = if fixed_huffman { (HuffmanDec::new(), HuffmanDec::new()) } else { try!(read_code_table(&mut reader)) };
     loop {
-        let lit = if fixed_huffman { try!(read_code(&mut reader, &FIXED_LITERAL_DEC)) } else { try!(read_code(&mut reader, &lit_dec)) };
+        let lit = match block_type {
+            BlockType::Store => {
+                try!(reader.read_bits(8, false)) as u16
+            }
+            BlockType::FixedHuffman => try!(read_code(&mut reader, &FIXED_LITERAL_DEC)),
+            BlockType::DynamicHuffman => try!(read_code(&mut reader, &dec.0))
+        };
         match lit {
             0...255 => {
                 let byte = lit as u8;
                 if window.len() == MAXIMUM_DISTANCE {
                     let byte: [u8; 1] = [window.remove(0); 1];
                     try!(output.write(&byte));
+                    hasher.write(&byte);
                 }
                 window.push(byte);
                 debug!("lit: {:02x}", lit);
                 decompressed_size += 1;
             }
-            256 => break,
+            256 => {
+                debug!("end of block");
+                break;
+            }
             257...285 => {
                 let len = try!(read_length(lit, &mut reader)) as usize;
                 assert!(len <= MAXIMUM_LENGTH);
-                let dist_code = if fixed_huffman { try!(reader.read_bits(5, false)) } else { try!(read_code(&mut reader, &dist_dec)) };
+
+                let dist_code = match block_type {
+                    BlockType::FixedHuffman => try!(reader.read_bits(5, false)),
+                    BlockType::DynamicHuffman => try!(read_code(&mut reader, &dec.1)),
+                    _ => return Err(Error::new(ErrorKind::Other, "Bad block type; Shouldn't reach here"))
+                };
                 let dist = try!(read_distance(dist_code, &mut reader)) as usize;
                 debug!("{}: {}", decompressed_size, to_hex_string(&window));
                 debug!("{}({}), {} {}", dist, dist_code, len, window.len());
@@ -167,6 +192,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 if window.len() + len > window.capacity() {
                     let to_write = window.len() + len - window.capacity();
                     try!(output.write(&window[0..to_write]));
+                    hasher.write(&window[0..to_write]);
                     window.drain(0..to_write);
                 }
                 //Fix the case len > dist
@@ -187,7 +213,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                     seg.resize(cur_len, 0);
                     window.extend_from_slice(&seg);
                 }
-                decompressed_size += len;
+                decompressed_size += len as u32;
             }
             _ => {
                 return Err(Error::new(ErrorKind::Other, "Bad literal"));
@@ -195,6 +221,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         }
     }
     try!(output.write(window.as_slice()));
-    Ok(())
+    hasher.write(window.as_slice());
+    Ok((decompressed_size, hasher.sum32()))
 }
 
