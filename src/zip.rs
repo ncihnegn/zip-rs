@@ -8,6 +8,7 @@ use std::str;
 use std::string::String;
 use std::vec::Vec;
 
+use crc::crc32::{Digest, Hasher32, IEEE};
 use num::FromPrimitive;
 
 use deflate::*;
@@ -441,7 +442,23 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
         let out = Vec::<u8>::new();
         let mut writer = BufWriter::new(out);
         match lfh.compression_method {
-            CompMethod::Store => return Err(Error::new(ErrorKind::Other, "Store not supported")),
+            CompMethod::Store => {
+                let mut out = Vec::<u8>::new();
+                out.resize(64 * 1024, 0);
+                let mut copied = 0;
+                let mut hasher = Digest::new(IEEE);
+                while copied < lfh.uncompressed_size {
+                    let to_copy = (lfh.uncompressed_size - copied) as usize;
+                    if to_copy < out.len() {
+                        out.resize(to_copy, 0);
+                    }
+                    try!(reader.read_exact(&mut out));
+                    try!(writer.write(&out));
+                    copied += out.len() as u32;
+                    hasher.write(&out);
+                }
+                assert_eq!(hasher.sum32(), lfh.crc);
+            }
             CompMethod::Deflate => {
                 let (decompressed_size, checksum) = try!(inflate(&mut reader, &mut writer));
                 assert_eq!(decompressed_size, lfh.uncompressed_size);
@@ -461,6 +478,11 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn store() {
+        assert!(parse("store.zip").is_ok());
+    }
 
     #[test]
     fn fixed_huffman() {

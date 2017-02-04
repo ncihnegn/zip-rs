@@ -8,9 +8,9 @@ use bitstream::*;
 use huffman::*;
 use util::*;
 
-pub const NUM_LITERAL: u16 = 288;
-pub const MAXIMUM_DISTANCE: usize = 32 * 1024;
-pub const MAXIMUM_LENGTH: usize = 258;
+//const NUM_LITERAL: u16 = 288;
+const MAXIMUM_DISTANCE: usize = 32 * 1024;
+const MAXIMUM_LENGTH: usize = 258;
 
 #[repr(u8)]
 #[derive(FromPrimitive)]
@@ -49,7 +49,7 @@ fn read_distance<R: Read>(dist_code: u16, reader: &mut BitReader<R>) -> Result<u
     Ok(distance + 1)
 }
 
-pub fn read_codelens<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, n: usize) -> Result<Vec<u8>, Error> {
+fn read_codelens<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, n: usize) -> Result<Vec<u8>, Error> {
     let mut lens = Vec::<u8>::new();
     lens.resize(n, 0);
     let mut index = 0;
@@ -88,7 +88,7 @@ pub fn read_codelens<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, 
     Ok(lens)
 }
 
-pub fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, HuffmanDec), Error> {
+fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, HuffmanDec), Error> {
     let hlit = try!(reader.read_bits(5, true)) as usize + 257;
     let hdist = try!(reader.read_bits(5, true)) as usize + 1;
     let hclen = try!(reader.read_bits(4, true)) as usize + 4;
@@ -106,7 +106,9 @@ pub fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
 }
 
-pub fn read_fixed_literal<R: Read>(reader: &mut BitReader<R>) -> u16 {
+//Not being used
+#[allow(dead_code)]
+fn read_fixed_literal<R: Read>(reader: &mut BitReader<R>) -> u16 {
     let mut lit = reader.read_bits(7, false).unwrap();
     if lit <= 0b0010111 {
         lit += 256;
