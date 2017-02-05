@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Error, ErrorKind};
 use std::io::SeekFrom::{Current, Start};
 use std::io::prelude::*;
@@ -248,7 +248,7 @@ impl fmt::Display for GPBF {
 }
 
 #[allow(dead_code)]
-struct LocalFileHeader {
+pub struct LocalFileHeader {
     file_name: String,
     version_needed_to_extract: Version,
     general_purpose_bit_flag: GPBF,
@@ -260,6 +260,7 @@ struct LocalFileHeader {
     last_mod_file_date: u16,
     file_name_length: u16,
     extra_field_length: u16,
+    offset: u64
 }
 
 impl fmt::Display for LocalFileHeader {
@@ -337,20 +338,22 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
     let file_name_length: u16 = trans16(word);
     let _ = reader.read_exact(&mut word);
     let extra_field_length: u16 = trans16(word);
-    Ok(LocalFileHeader { file_name: String::new(),
-                      version_needed_to_extract: version,
-                      general_purpose_bit_flag: gpbf,
-                      compression_method: method,
-                      compressed_size: compressed_size,
-                      uncompressed_size: uncompressed_size,
-                      crc: crc,
-                      last_mod_file_time: time,
-                      last_mod_file_date: date,
-                      file_name_length: file_name_length,
-                      extra_field_length: extra_field_length })
+    Ok(LocalFileHeader {
+        file_name: String::new(),
+        version_needed_to_extract: version,
+        general_purpose_bit_flag: gpbf,
+        compression_method: method,
+        compressed_size: compressed_size,
+        uncompressed_size: uncompressed_size,
+        crc: crc,
+        last_mod_file_time: time,
+        last_mod_file_date: date,
+        file_name_length: file_name_length,
+        extra_field_length: extra_field_length,
+        offset: 0})
 }
 
-pub fn parse(file_name: &str) -> Result<(), Error> {
+pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
     let file = try!(File::open(file_name));
     let mut reader = BufReader::new(file);
     let mut word: [u8; 2] = [0; 2];
@@ -359,7 +362,7 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
     let mut lfh_array: [u8; LFH_SIZE] = [0; LFH_SIZE];
     let mut lfh_counter = 0;
     let mut cfh_counter = 0;
-    let mut lfhs: HashMap<u64, LocalFileHeader> = HashMap::new();
+    let mut lfhs = Vec::<LocalFileHeader>::new();
     while reader.read_exact(&mut dword).is_ok() {
         let signature = Signature::from_u32(trans32(dword));
         match signature {
@@ -373,11 +376,10 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
                 try!(reader.read_exact(&mut v as &mut [u8]));
                 lfh.file_name = String::from_utf8(v).unwrap();
                 try!(reader.seek(Current(lfh.extra_field_length as i64)));
-                let position = try!(reader.seek(Current(0)));
+                lfh.offset = try!(reader.seek(Current(0)));
                 try!(reader.seek(Current(lfh.compressed_size as i64)));
-                debug!("0x{:08x}", position);
                 debug!("{}", lfh);
-                lfhs.insert(position, lfh);
+                lfhs.push(lfh);
             }
             Some(Signature::CFH) => {
                 cfh_counter += 1;
@@ -436,42 +438,49 @@ pub fn parse(file_name: &str) -> Result<(), Error> {
             }
         }
     }
+    Ok(lfhs)
+}
 
-    for (position, lfh) in lfhs {
-        try!(reader.seek(Start(position)));
-        let out = Vec::<u8>::new();
-        let mut writer = BufWriter::new(out);
-        match lfh.compression_method {
-            CompMethod::Store => {
-                let mut out = Vec::<u8>::new();
-                out.resize(64 * 1024, 0);
-                let mut copied = 0;
-                let mut hasher = Digest::new(IEEE);
-                while copied < lfh.uncompressed_size {
-                    let to_copy = (lfh.uncompressed_size - copied) as usize;
-                    if to_copy < out.len() {
-                        out.resize(to_copy, 0);
-                    }
-                    try!(reader.read_exact(&mut out));
-                    try!(writer.write(&out));
-                    copied += out.len() as u32;
-                    hasher.write(&out);
-                }
-                assert_eq!(hasher.sum32(), lfh.crc);
-            }
-            CompMethod::Deflate => {
-                let (decompressed_size, checksum) = try!(inflate(&mut reader, &mut writer));
-                assert_eq!(decompressed_size, lfh.uncompressed_size);
-                assert_eq!(checksum, lfh.crc);
-            }
-            _ => return Err(Error::new(ErrorKind::Other, "Unsupported compression method")),
-        }
-        let out = match writer.into_inner() {
-            Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Can't get the inner output")),
-        };
-        debug!("\n{}", str::from_utf8(&out).unwrap());
+pub fn extract(file_name: &str, lfh: &LocalFileHeader) -> Result<(), Error> {
+    debug!("{}", file_name);
+    let file = try!(File::open(file_name));
+    let mut reader = BufReader::new(file);
+    try!(reader.seek(Start(lfh.offset)));
+    debug!("{}", lfh.file_name);
+    if lfh.file_name.ends_with('/') {
+        debug!("Directory");
+        try!(fs::create_dir_all(&lfh.file_name));
+        return Ok(());
     }
+    debug!("File");
+    let out = try!(File::create(&lfh.file_name));
+    let mut writer = BufWriter::new(out);
+    match lfh.compression_method {
+        CompMethod::Store => {
+            let mut out = Vec::<u8>::new();
+            out.resize(64 * 1024, 0);
+            let mut copied = 0;
+            let mut hasher = Digest::new(IEEE);
+            while copied < lfh.uncompressed_size {
+                let to_copy = (lfh.uncompressed_size - copied) as usize;
+                if to_copy < out.len() {
+                    out.resize(to_copy, 0);
+                }
+                try!(reader.read_exact(&mut out));
+                try!(writer.write(&out));
+                copied += out.len() as u32;
+                hasher.write(&out);
+            }
+            assert_eq!(hasher.sum32(), lfh.crc);
+        }
+        CompMethod::Deflate => {
+            let (decompressed_size, checksum) = try!(inflate(&mut reader, &mut writer));
+            assert_eq!(decompressed_size, lfh.uncompressed_size);
+            assert_eq!(checksum, lfh.crc);
+        }
+        _ => return Err(Error::new(ErrorKind::Other, "Unsupported compression method")),
+    }
+    try!(writer.flush());
     Ok(())
 }
 
