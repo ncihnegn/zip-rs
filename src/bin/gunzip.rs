@@ -12,7 +12,14 @@ fn main() {
             println!("Usage: gunzip myfile.zip");
         }
         2 => {
-            let _ = parse(args[1].as_str());
+            let file_name = args[1].as_str();
+            let v = parse(&file_name).unwrap();
+            for f in v {
+                match extract(&file_name, &f) {
+                    Ok(()) => println!("{} is extracted successfully", file_name),
+                    Err(e) => println!("{:?}", e),
+                }
+            }
         }
         _ => {
             println!("Usage: gunzip myfile.zip");

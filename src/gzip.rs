@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Error, ErrorKind, SeekFrom};
+use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Seek, SeekFrom};
 use std::io::prelude::*;
 use std::str;
 
@@ -77,6 +77,8 @@ pub struct GzipMember {
     offset: u64,
     crc32: u32,
     isize: u32,
+    file_name: String,
+    file_comment: String,
 }
 
 pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
@@ -86,7 +88,9 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
     let mut word: [u8; 2] = [0; 2];
     let mut dword: [u8; 4] = [0; 4];
     let mut members = Vec::new();
+    //let current = reader.seek(SeekFrom::Current(0)).unwrap();
     let end = reader.seek(SeekFrom::End(0)).unwrap();
+    //assert_eq!(current, reader.seek(SeekFrom::Start(current)).unwrap());
     let _ = reader.seek(SeekFrom::Start(0));
     while reader.seek(SeekFrom::Current(0)).unwrap() != end {
         try!(reader.read_exact(&mut byte));
@@ -132,15 +136,29 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
             extra.resize(xlen as usize, 0);
             try!(reader.read_exact(&mut extra as &mut [u8]));
         }
-        let mut file_name = Vec::<u8>::new();
+        let mut file_name = String::from(file_name);
         if flg.fname {
-            try!(reader.read_until(0, &mut file_name));
+            let mut v = Vec::<u8>::new();
+            try!(reader.read_until(0, &mut v));
+            v.pop();//Remove trailing '\0'
+            file_name = String::from_utf8(v).unwrap();
+        } else {
+            if file_name.ends_with(".gz") {
+                let len = file_name.len() - 3;
+                file_name.truncate(len);
+            }
+            if members.len() > 0 {
+                file_name += &format!(".{}", members.len());
+            }
         }
-        debug!("File name: {}", str::from_utf8(&file_name).unwrap());
-        let mut file_comment = Vec::<u8>::new();
+        debug!("File name: {}", file_name);
+        let mut file_comment = String::new();
         if flg.fcomment {
-            try!(reader.read_until(0, &mut file_comment));
-            debug!("File comment: {}", str::from_utf8(&file_comment).unwrap());
+            let mut v = Vec::<u8>::new();
+            try!(reader.read_until(0, &mut v));
+            v.pop();
+            file_comment = String::from_utf8(v).unwrap();
+            debug!("File comment: {}", file_comment);
         }
         let mut crc16: u16 = 0;
         if flg.fhcrc {
@@ -164,11 +182,25 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
         assert_eq!(crc, crc32);
         debug!("\n{}", str::from_utf8(&out).unwrap());
 
-        let mem = GzipMember { flg: flg, mtime: mtime, xfl: xfl, os: os, crc16: crc16, crc32: crc32, isize: isize, offset: offset };
+        let mem = GzipMember { flg: flg, mtime: mtime, xfl: xfl, os: os, crc16: crc16, crc32: crc32, isize: isize, offset: offset, file_name: file_name, file_comment: file_comment };
         members.push(mem);
     }
     Ok(members)
 }
+
+pub fn extract(file_name: &str, member: &GzipMember) -> Result<(), Error> {
+    let input = try!(File::open(file_name));
+    let mut reader = BufReader::new(input);
+    try!(reader.seek(SeekFrom::Start(member.offset)));
+    let output = try!(File::create(&member.file_name));
+    let mut writer = BufWriter::new(output);
+    let (decompressed_size, crc) = try!(inflate(&mut reader, &mut writer));
+    assert_eq!(decompressed_size, member.isize);
+    assert_eq!(crc, member.crc32);
+    try!(writer.flush());
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod test {
@@ -176,11 +208,13 @@ mod test {
 
     #[test]
     fn basic() {
-        assert!(parse("test/dynamic_huffman.gz").is_ok());
+        let file_name = "test/dynamic_huffman.gz";
+        assert!(parse(&file_name).is_ok());
     }
 
     #[test]
     fn multiple() {
-        assert!(parse("test/multiple.gz").is_ok());
+        let file_name = "test/multiple.gz";
+        assert!(parse(&file_name).is_ok());
     }
 }
