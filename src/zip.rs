@@ -353,6 +353,15 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
         offset: 0})
 }
 
+/// Parse a zip file
+///
+/// # Example
+///
+/// ```no_run
+/// use zip::zip;
+///
+/// let v = zip::parse("my.zip").unwrap();
+/// ```
 pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
     let file = try!(File::open(file_name));
     let mut reader = BufReader::new(file);
