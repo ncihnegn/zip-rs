@@ -21,9 +21,6 @@ enum BlockType {
 }
 
 //static fixed_lit_count: Vec<u16> = vec!(0,0,0,0,0,0,280-256,144+288-280,256-244);
-lazy_static! {
-    pub static ref FIXED_LITERAL_DEC: HuffmanDec = HuffmanDec::fixed_literal_dec();
-}
 
 fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> Result<u16, Error> {
     let mut len = lit - 257;

@@ -1,8 +1,13 @@
-use std::io::{Error, ErrorKind,Read};
+use std::io::{Error, ErrorKind, Read, Write};
 
 use bitstream::*;
 
 const MAXBITS: usize = 15;
+
+lazy_static! {
+    pub static ref FIXED_LITERAL_DEC: HuffmanDec = HuffmanDec::fixed_literal_dec();
+    pub static ref FIXED_LITERAL_ENC: Vec<(u8, Bits)> = HuffmanEnc::fixed_literal_enc();
+}
 
 #[allow(dead_code)]
 pub struct HuffmanDec {
@@ -25,6 +30,25 @@ impl HuffmanDec {
         let mut len9: Vec<u16> = (144..256).collect();
         symbol.append(&mut len9);
         HuffmanDec { count: count, symbol: symbol }
+    }
+}
+
+#[allow(dead_code)]
+pub struct HuffmanEnc {
+    
+}
+impl HuffmanEnc {
+    pub fn fixed_literal_enc() -> Vec<(u8, Bits)> {
+        let lit: u16 = 288;
+        let mut lit_lens: Vec<u8> = Vec::new();
+        lit_lens.resize(lit as usize, 8);
+        for s in 144..256 {
+            lit_lens[s] = 9;
+        }
+        for s in 256..280 {
+            lit_lens[s] = 7;
+        }
+        return gen_huffman_enc(&lit_lens);
     }
 }
 
@@ -109,27 +133,27 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
     Err(Error::new(ErrorKind::Other, "Illegal Huffman code"))
 }
 
+pub fn write_code<W: Write>(writer: &mut BitWriter<W>, data: u16, enc: Vec<(u8, Bits)>) -> Result<u8, Error> {
+    if enc.len() > data as usize {
+        return Err(Error::new(ErrorKind::Other, "Data not in the table"));
+    }
+    let (n, bits) = enc[data as usize];
+    return Ok(try!(writer.write_bits(bits, n, false)));
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn fixed_huffman_literal() {
-        let lit = 288;
-        let mut lit_lens: Vec<u8> = Vec::new();
-        lit_lens.resize(lit, 8);
-        for s in 144..256 {
-            lit_lens[s] = 9;
-        }
-        for s in 256..280 {
-            lit_lens[s] = 7;
-        }
-        let enc = gen_huffman_enc(&lit_lens);
+
+        let ref enc = FIXED_LITERAL_ENC;
         assert!(enc[0].1 == 0b00110000);
         assert!(enc[144].1 == 0b110010000);
         assert!(enc[256].1 == 0b0000000);
         assert!(enc[280].1 == 0b11000000);
-        let dec = gen_huffman_dec(&lit_lens, 288);
+        let ref dec = FIXED_LITERAL_DEC;
         assert!(dec.count[7] == 24);
         assert!(dec.count[8] == 152);
         assert!(dec.count[9] == 112);
