@@ -1,12 +1,37 @@
+use std::cmp::{Ordering, PartialOrd};
+use std::collections::{BinaryHeap};
 use std::io::{Error, ErrorKind, Read, Write};
+use std::u16;
 
 use bitstream::*;
 
 const MAXBITS: usize = 15;
+const MAXLITERAL: u16 = 287;
 
 lazy_static! {
     pub static ref FIXED_LITERAL_DEC: HuffmanDec = HuffmanDec::fixed_literal_dec();
     pub static ref FIXED_LITERAL_ENC: Vec<(u8, Bits)> = HuffmanEnc::fixed_literal_enc();
+}
+
+#[derive(Eq, PartialEq)]
+struct Char {
+    val: u16,
+    freq: usize,
+    left: Option<Box<Char>>,
+    right: Option<Box<Char>>
+}
+
+impl Ord for Char {
+    fn cmp(&self, other: &Char) -> Ordering {
+        // Note that we flip the ordering here
+        other.freq.cmp(&self.freq)
+    }
+}
+
+impl PartialOrd for Char {
+    fn partial_cmp(&self, other: &Char) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 #[allow(dead_code)]
@@ -39,9 +64,8 @@ pub struct HuffmanEnc {
 }
 impl HuffmanEnc {
     pub fn fixed_literal_enc() -> Vec<(u8, Bits)> {
-        let lit: u16 = 288;
-        let mut lit_lens: Vec<u8> = Vec::new();
-        lit_lens.resize(lit as usize, 8);
+        let mut lit_lens = Vec::<u8>::with_capacity(MAXLITERAL as usize + 1);
+        lit_lens.resize(MAXLITERAL as usize + 1, 8);
         for s in 144..256 {
             lit_lens[s] = 9;
         }
@@ -52,6 +76,52 @@ impl HuffmanEnc {
     }
 }
 
+/// Assign lengths based on frequencies
+pub fn assign_lengths(v: &Vec<usize>) -> Vec<u8> {
+    const NONLEAF: u16 = u16::MAX;
+    let mut heap = BinaryHeap::new();
+    // Build a min-heap
+    for c in 0..v.len() {
+        if v[c] > 0 {
+            heap.push(Char { val: c as u16, freq: v[c], left: None, right: None});
+        }
+    }
+    while heap.len() > 1 {
+        let l = heap.pop().unwrap();
+        let r = heap.pop().unwrap();
+        heap.push(Char { val: NONLEAF, freq: l.freq + r.freq,
+                         left: Some(Box::new(l)), right: Some(Box::new(r)) });
+    }
+    let root = heap.pop().unwrap();
+    let mut todo = Vec::new();
+    todo.push(root);
+    let mut level: u8 = 0;
+    let mut lengths = Vec::<u8>::with_capacity(v.len());
+    lengths.resize(v.len(), 0);
+    while !todo.is_empty() {
+        let mut next = Vec::new();
+        for c in todo {
+            match c.left {
+                Some(l) => next.push(*l),
+                None => {}
+            }
+            match c.right {
+                Some(r) => next.push(*r),
+                None => {}
+            }
+            if c.val != NONLEAF {
+                lengths[c.val as usize] = level;
+            }
+            //print!("({},{}), ", c.val, c.freq);
+        }
+        //println!("");
+        todo = next;
+        level += 1;
+    }
+    lengths
+}
+
+/// Generate a Huffman encoding table with lengths
 pub fn gen_huffman_enc(v: &Vec<u8>) -> Vec<(u8, Bits)> {
     let mut bl_count = Vec::<Bits>::new();
     let max_bits = v.iter().max().unwrap().clone() as usize;
@@ -147,7 +217,6 @@ mod test {
 
     #[test]
     fn fixed_huffman_literal() {
-
         let ref enc = FIXED_LITERAL_ENC;
         assert!(enc[0].1 == 0b00110000);
         assert!(enc[144].1 == 0b110010000);
@@ -172,5 +241,25 @@ mod test {
         assert!(enc[4].1 == 30);
         assert!(enc[5].1 == 1);
         assert!(enc[17].1 == 13);
+    }
+
+    #[test]
+    fn assign_lengths_test() {
+        // Introduction to Algorithms, Third Edition, Figure 16.5
+        let mut v = Vec::new();
+        v.resize('f' as usize + 1, 0);
+        v['f' as usize] =  5;
+        v['e' as usize] =  9;
+        v['c' as usize] =  12;
+        v['b' as usize] =  13;
+        v['d' as usize] =  16;
+        v['a' as usize] =  45;
+        let l = assign_lengths(&v);
+        assert!(l['f' as usize] == 4);
+        assert!(l['e' as usize] == 4);
+        assert!(l['c' as usize] == 3);
+        assert!(l['b' as usize] == 3);
+        assert!(l['d' as usize] == 3);
+        assert!(l['a' as usize] == 1);
     }
 }

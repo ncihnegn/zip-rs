@@ -360,7 +360,8 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
 /// ```no_run
 /// use zip::zip;
 ///
-/// let v = zip::parse("my.zip").unwrap();
+/// let v = zip::parse("my.zip");
+/// assert!(v.is_ok());
 /// ```
 pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
     let file = try!(File::open(file_name));
