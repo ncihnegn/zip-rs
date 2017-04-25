@@ -1,5 +1,5 @@
 use std::cmp::{Ordering, PartialOrd};
-use std::collections::{BinaryHeap};
+use std::collections::BinaryHeap;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::u16;
 
@@ -101,27 +101,19 @@ pub fn assign_lengths(v: &Vec<usize>) -> Vec<u8> {
     while !todo.is_empty() {
         let mut next = Vec::new();
         for c in todo {
-            match c.left {
-                Some(l) => next.push(*l),
-                None => {}
-            }
-            match c.right {
-                Some(r) => next.push(*r),
-                None => {}
-            }
+            c.left.map(|l| { next.push(*l); });
+            c.right.map(|r| { next.push(*r); });
             if c.val != NONLEAF {
                 lengths[c.val as usize] = level;
             }
-            //print!("({},{}), ", c.val, c.freq);
         }
-        //println!("");
         todo = next;
         level += 1;
     }
     lengths
 }
 
-/// Generate a Huffman encoding table with lengths
+/// Generate a canonical Huffman encoding table with lengths
 pub fn gen_huffman_enc(v: &Vec<u8>) -> Vec<(u8, Bits)> {
     let mut bl_count = Vec::<Bits>::new();
     let max_bits = v.iter().max().unwrap().clone() as usize;
