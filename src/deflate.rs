@@ -12,7 +12,7 @@ use util::*;
 const MAXIMUM_DISTANCE: usize = 32 * 1024;
 const MAXIMUM_LENGTH: usize = 258;
 
-#[repr(u8)]
+#[repr(u16)]
 #[derive(FromPrimitive)]
 enum BlockType {
     Store = 0,
@@ -103,7 +103,7 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
 }
 
-//Not being used
+// Not being used
 #[allow(dead_code)]
 fn read_fixed_literal<R: Read>(reader: &mut BitReader<R>) -> u16 {
     let mut lit = reader.read_bits(7, false).unwrap();
@@ -224,3 +224,43 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     Ok((decompressed_size, hasher.sum32()))
 }
 
+pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<(u32, u32), Error> {
+    let mut window = Vec::<u8>::with_capacity(MAXIMUM_DISTANCE + MAXIMUM_LENGTH);
+    window.resize(MAXIMUM_DISTANCE + MAXIMUM_LENGTH, 0);
+    let mut bytes = [0 as u8; MAXIMUM_LENGTH];
+    let mut compressed_size: u32 = 0;
+    let mut hasher = Digest::new(IEEE);
+    let mut writer = BitWriter::new();
+    writer.write_bits(1, 1, true);
+    writer.write_bits(BlockType::FixedHuffman as u16, 2, true);
+    loop {
+        let len = input.read(&mut bytes).unwrap();
+        if len == 0 {
+            break;
+        }
+        let mut nb = 0;
+        for i in 0..len {
+            let (bits, bits_len) = FIXED_LITERAL_ENC[bytes[i] as usize];
+            let v = writer.write_bits(bits, bits_len, false);
+            nb += v.len();
+            window.extend(v.iter());
+        }
+        try!(output.write(&window[0..nb]));
+        hasher.write(&window[0..nb]);
+        window.drain(0..nb);
+        compressed_size += nb as u32;
+    }
+    writer.flush().map(|c| { window.push(c); });
+    try!(output.write(&window[0..window.len()]));
+    hasher.write(&window[0..window.len()]);
+    Ok((compressed_size, hasher.sum32()))
+}
+
+#[cfg(test)]
+mod test {
+
+    #[test]
+    fn fixed_huffman_literals() {
+        // TODO
+    }
+}

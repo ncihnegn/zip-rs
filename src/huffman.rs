@@ -1,6 +1,6 @@
 use std::cmp::{Ordering, PartialOrd};
 use std::collections::BinaryHeap;
-use std::io::{Error, ErrorKind, Read, Write};
+use std::io::{Error, ErrorKind, Read};
 use std::u16;
 
 use bitstream::*;
@@ -10,7 +10,7 @@ const MAXLITERAL: u16 = 287;
 
 lazy_static! {
     pub static ref FIXED_LITERAL_DEC: HuffmanDec = HuffmanDec::fixed_literal_dec();
-    pub static ref FIXED_LITERAL_ENC: Vec<(u8, Bits)> = HuffmanEnc::fixed_literal_enc();
+    pub static ref FIXED_LITERAL_ENC: Vec<(Bits, u8)> = HuffmanEnc::fixed_literal_enc();
 }
 
 #[derive(Eq, PartialEq)]
@@ -34,7 +34,6 @@ impl PartialOrd for Char {
     }
 }
 
-#[allow(dead_code)]
 pub struct HuffmanDec {
     count: Vec<u16>,
     symbol: Vec<u16>,
@@ -58,12 +57,11 @@ impl HuffmanDec {
     }
 }
 
-#[allow(dead_code)]
 pub struct HuffmanEnc {
     
 }
 impl HuffmanEnc {
-    pub fn fixed_literal_enc() -> Vec<(u8, Bits)> {
+    pub fn fixed_literal_enc() -> Vec<(Bits, u8)> {
         let mut lit_lens = Vec::<u8>::with_capacity(MAXLITERAL as usize + 1);
         lit_lens.resize(MAXLITERAL as usize + 1, 8);
         for s in 144..256 {
@@ -114,7 +112,7 @@ pub fn assign_lengths(v: &Vec<usize>) -> Vec<u8> {
 }
 
 /// Generate a canonical Huffman encoding table with lengths
-pub fn gen_huffman_enc(v: &Vec<u8>) -> Vec<(u8, Bits)> {
+pub fn gen_huffman_enc(v: &Vec<u8>) -> Vec<(Bits, u8)> {
     let mut bl_count = Vec::<Bits>::new();
     let max_bits = v.iter().max().unwrap().clone() as usize;
     bl_count.resize(max_bits+1, 0);
@@ -130,12 +128,12 @@ pub fn gen_huffman_enc(v: &Vec<u8>) -> Vec<(u8, Bits)> {
         next_code[bits] = code;
     }
     let max_code = v.len()-1;
-    let mut enc = Vec::<(u8, Bits)>::new();
+    let mut enc = Vec::<(Bits, u8)>::new();
     enc.resize(max_code+1, (0, 0));
     for n in 0..max_code+1 {
         let len = v[n] as usize;
         if len != 0 {
-            enc[n] = (v[n], next_code[len]);
+            enc[n] = (next_code[len], v[n]);
             next_code[len] += 1;
         }
     }
@@ -195,14 +193,6 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
     Err(Error::new(ErrorKind::Other, "Illegal Huffman code"))
 }
 
-pub fn write_code<W: Write>(writer: &mut BitWriter<W>, data: u16, enc: Vec<(u8, Bits)>) -> Result<u8, Error> {
-    if enc.len() > data as usize {
-        return Err(Error::new(ErrorKind::Other, "Data not in the table"));
-    }
-    let (n, bits) = enc[data as usize];
-    return Ok(try!(writer.write_bits(bits, n, false)));
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -210,10 +200,10 @@ mod test {
     #[test]
     fn fixed_huffman_literal() {
         let ref enc = FIXED_LITERAL_ENC;
-        assert!(enc[0].1 == 0b00110000);
-        assert!(enc[144].1 == 0b110010000);
-        assert!(enc[256].1 == 0b0000000);
-        assert!(enc[280].1 == 0b11000000);
+        assert!(enc[0].0 == 0b00110000);
+        assert!(enc[144].0 == 0b110010000);
+        assert!(enc[256].0 == 0b0000000);
+        assert!(enc[280].0 == 0b11000000);
         let ref dec = FIXED_LITERAL_DEC;
         assert!(dec.count[7] == 24);
         assert!(dec.count[8] == 152);
@@ -227,12 +217,12 @@ mod test {
     fn dynamic_huffman_codelen() {
         let code_lens = vec![2, 6, 6, 4, 5, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 0];
         let enc = gen_huffman_enc(&code_lens);
-        assert!(enc[0].1 == 0b00);
-        assert!(enc[1].1 == 62);
-        assert!(enc[3].1 == 12);
-        assert!(enc[4].1 == 30);
-        assert!(enc[5].1 == 1);
-        assert!(enc[17].1 == 13);
+        assert!(enc[0].0 == 0b00);
+        assert!(enc[1].0 == 62);
+        assert!(enc[3].0 == 12);
+        assert!(enc[4].0 == 30);
+        assert!(enc[5].0 == 1);
+        assert!(enc[17].0 == 13);
     }
 
     #[test]

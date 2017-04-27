@@ -1,4 +1,4 @@
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 
 pub type Bits = u16;
 
@@ -59,52 +59,50 @@ impl<'a, R: Read> BitReader<'a, R> {
     }
 }
 
-#[allow(dead_code)]
-pub struct BitWriter<'a, W: Write + 'a> {
-    buf: &'a mut W,
+pub struct BitWriter {
     bits: u8,
-    acc: u32,
+    acc: u32
 }
 
-#[allow(dead_code)]
-impl<'a, W: Write> BitWriter<'a, W> {
-    pub fn new(buf: &'a mut W) -> BitWriter<W> {
-        BitWriter { buf: buf, bits: 0, acc: 0 }
+impl BitWriter {
+    pub fn new() -> BitWriter {
+        BitWriter { bits: 0, acc: 0 }
     }
 
     //order: true for LSB and false for MSB (Huffman codes)
-    pub fn write_bits(&mut self, b: Bits, n: u8, order: bool) -> Result<u8, io::Error> {
+    pub fn write_bits(&mut self, b: Bits, n: u8, order: bool) -> Vec<u8> {
         assert!(n <= 16);
         assert!(b <= 1 << n);
         let c = if order { b } else { reverse(b, n) };
         self.acc |= (c as u32) << self. bits;
         self.bits += n;
         let nb = self.bits / 8;
+        let mut bytes = Vec::<u8>::with_capacity(nb as usize);
         if nb > 0 {
-            let mut bytes = Vec::<u8>::new();
             bytes.reserve(nb as usize);
             for _ in 0..nb {
                 bytes.push((self.acc & 0xFF) as u8);
                 self.acc >>= 8;
             }
-            let nc = try!(self.buf.write(&bytes as &[u8]));
-            assert!(nc == nb as usize);
+            //let nc = try!(self.buf.write(&bytes as &[u8]));
+            //assert!(nc == nb as usize);
             self.bits -= nb * 8;
         }
-        Ok(nb)
+        bytes
     }
 
-    pub fn flush(&mut self) -> Result<u8, io::Error> {
+    pub fn flush(&mut self) -> Option<u8> {
         if self.bits > 0 {
             assert!(self.bits < 8);
-            let bytes: [u8; 1] = [self.acc as u8; 1];
-            try!(self.buf.write(&bytes));
-            try!(self.buf.flush());
+            //let bytes: [u8; 1] = [self.acc as u8; 1];
+            //try!(self.buf.write(&bytes));
+            //try!(self.buf.flush());
             self.bits = 0;
+            let byte = self.acc as u8;
             self.acc = 0;
-            Ok(1)
+            Some(byte)
         } else {
-            Ok(0)
+            None
         }
     }
 }
@@ -112,31 +110,22 @@ impl<'a, W: Write> BitWriter<'a, W> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::fs::{self, File};
-    use std::io::{BufReader, BufWriter};
+    use std::io::{BufReader, Cursor};
 
     #[test]
     fn basics() {
-        let file_name = "test/buf_read_write_test";
-        {
-            let file = File::create(file_name).unwrap();
-            let mut output = BufWriter::new(file);
-            let mut writer = BitWriter::new(&mut output);
-            let mut counter = writer.write_bits(0x5A5A, 15, false).unwrap();
-            assert!(counter == 1);
-            counter += writer.write_bits(0x3AA5, 15, true).unwrap();
-            assert!(counter == 3);
-            counter += writer.flush().unwrap();
-            assert!(counter == 4);
-        }
-        {
-            let file = File::open(file_name).unwrap();
-            let mut input = BufReader::new(file);
-            let mut reader = BitReader::new(&mut input);
-            let first = reader.read_bits(15, false).unwrap();
-            assert!(first == 0x5A5A);
-            assert!(reader.read_bits(15, true).unwrap() == 0x3AA5);
-        }
-        let _ = fs::remove_file(file_name);
+        let mut writer = BitWriter::new();
+        let mut vec = writer.write_bits(0x5A5A, 15, false);
+        assert!(vec.len() == 1);
+        vec.extend(writer.write_bits(0x3AA5, 15, true).iter());
+        assert!(vec.len() == 3);
+        writer.flush().map(|c| { vec.push(c); });
+        assert!(vec.len() == 4);
+        let mut input = BufReader::new(Cursor::new(vec));
+        let mut reader = BitReader::new(&mut input);
+        let first = reader.read_bits(15, false).unwrap();
+        assert!(first == 0x5A5A);
+        let second = reader.read_bits(15, true).unwrap();
+        assert!(second == 0x3AA5);
     }
 }

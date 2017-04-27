@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Error, ErrorKind};
@@ -298,11 +297,6 @@ struct EndCentralDirectoryRecord {
     number_of_this_disk: u16,
     file_comment_length: u16,
     file_comment: String,
-}
-
-#[allow(dead_code)]
-struct HuffmanCode {
-    map: HashMap<u16, u8>,
 }
 
 const LFH_SIZE: usize = 2 * 5 + 4 * 3 + 2 * 2;
