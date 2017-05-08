@@ -8,7 +8,7 @@ use bitstream::*;
 use huffman::*;
 use util::*;
 
-//const NUM_LITERAL: u16 = 288;
+const NUM_LITERAL: u16 = 288;
 const MAXIMUM_DISTANCE: usize = 32 * 1024;
 const MAXIMUM_LENGTH: usize = 258;
 
@@ -233,12 +233,17 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
     writer.write_bits(1, 1, true);
-    writer.write_bits(BlockType::FixedHuffman as u16, 2, true);
-    //let freq = Vec::<usize>::new();
+    writer.write_bits(BlockType::DynamicHuffman as u16, 2, true);
+    let mut freq = Vec::<usize>::with_capacity(NUM_LITERAL as usize);
+    freq.resize(257, 0);
+    freq[256] = 1;
     let mut read_len = 0;
     loop {
         let len = input.read(&mut bytes).unwrap();
         read_len += len;
+        for i in 0..len {
+            freq[bytes[i] as usize] += 1;
+        }
 
         if len == 0 {
             break;
@@ -246,13 +251,15 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         data.extend(&bytes[0..len]);
     }
     debug!("read len {}", read_len);
+    let code_len = assign_lengths(&freq);
+    let enc = gen_huffman_enc(&code_len);
     for b in data {
-        let (bits, bits_len) = FIXED_LITERAL_ENC[b as usize];
+        let (bits, bits_len) = enc[b as usize];
         debug!("byte {:02x}->{} {}", b, bits, bits_len);
         let v = writer.write_bits(bits, bits_len, false);
         window.extend(v.iter());
     }
-    let (bits, bits_len) = FIXED_LITERAL_ENC[256];//end
+    let (bits, bits_len) = enc[256];//end
     let v = writer.write_bits(bits, bits_len, false);
     window.extend(v.iter());
     writer.flush().map(|c| { window.push(c); });
