@@ -227,36 +227,30 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
 }
 
 pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<(u32, u32), Error> {
-    let mut window = Vec::<u8>::with_capacity(MAXIMUM_DISTANCE + MAXIMUM_LENGTH);
+    let mut window = Vec::<u8>::new();
     let mut bytes = [0 as u8; MAXIMUM_LENGTH];
-    let mut compressed_size: u32 = 0;
+    let mut data = Vec::<u8>::new();
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
     writer.write_bits(1, 1, true);
     writer.write_bits(BlockType::FixedHuffman as u16, 2, true);
+    //let freq = Vec::<usize>::new();
     let mut read_len = 0;
     loop {
         let len = input.read(&mut bytes).unwrap();
         read_len += len;
-        debug!("read len {}", read_len);
 
         if len == 0 {
             break;
         }
-        let mut nb = 0;
-        for i in 0..len {
-            let (bits, bits_len) = FIXED_LITERAL_ENC[bytes[i] as usize];
-            debug!("byte {} {:02x}->{} {}", i, bytes[i], bits, bits_len);
-            let v = writer.write_bits(bits, bits_len, false);
-            nb += v.len();
-            window.extend(v.iter());
-        }
-        try!(output.write(&window[0..nb]));
-        hasher.write(&window[0..nb]);
-        debug!("window {} {:?}", window.len(), window);
-        window.drain(0..nb);
-        compressed_size += nb as u32;
-        debug!("compressed size: {}", compressed_size);
+        data.extend(&bytes[0..len]);
+    }
+    debug!("read len {}", read_len);
+    for b in data {
+        let (bits, bits_len) = FIXED_LITERAL_ENC[b as usize];
+        debug!("byte {:02x}->{} {}", b, bits, bits_len);
+        let v = writer.write_bits(bits, bits_len, false);
+        window.extend(v.iter());
     }
     let (bits, bits_len) = FIXED_LITERAL_ENC[256];//end
     let v = writer.write_bits(bits, bits_len, false);
@@ -265,6 +259,8 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     debug!("window {:?}", window);
     try!(output.write(&window[0..window.len()]));
     hasher.write(&window[0..window.len()]);
+    let compressed_size = window.len() as u32;
+    debug!("compressed size: {}", compressed_size);
     Ok((compressed_size, hasher.sum32()))
 }
 
