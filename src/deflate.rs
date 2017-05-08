@@ -241,8 +241,8 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         read_len += len;
         debug!("read len {}", read_len);
 
-        if len < bytes.len() {
-            ended = true;
+        if len == 0 {
+            break;
         }
         let mut nb = 0;
         for i in 0..len {
@@ -258,9 +258,6 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         window.drain(0..nb);
         compressed_size += nb as u32;
         debug!("compressed size: {}", compressed_size);
-        if ended {
-            break;
-        }
     }
     let (bits, bits_len) = FIXED_LITERAL_ENC[256];//end
     let v = writer.write_bits(bits, bits_len, false);
@@ -294,7 +291,7 @@ mod test {
         let crc = hasher.sum32();
         let mut compressed = Vec::<u8>::new();
         {
-            let mut reader = BufReader::with_capacity(uncompressed_len, &uncompressed as &[u8]);
+            let mut reader = BufReader::new(&uncompressed as &[u8]);
             let mut writer = BufWriter::new(&mut compressed);
             let (compressed_len, ccrc) = deflate(&mut reader, &mut writer).unwrap();
             println!("{} {}", compressed_len, ccrc);
