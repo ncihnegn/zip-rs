@@ -184,6 +184,7 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
         first <<= e;
         bits |= try!(reader.read_bits(e, false));
         let count = dec.count[b];
+        debug!("bits: {}", bits);
         if bits >= first && bits < first + count {
             return Ok(dec.symbol[(index + bits - first) as usize]);
         }

@@ -135,6 +135,8 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     let last_block_bit = try!(reader.read_bits(1, true));
     if last_block_bit == 1 {
         debug!("Last Block");
+    } else {
+        debug!("Not last block");
     }
     let block_type = BlockType::from_u8(try!(reader.read_bits(2, true)) as u8);
     let mut hasher = Digest::new(IEEE);
@@ -167,7 +169,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                     hasher.write(&byte);
                 }
                 window.push(byte);
-                debug!("lit: {:02x}", lit);
+                debug!("lit {}: {:02x}", decompressed_size, lit);
                 decompressed_size += 1;
             }
             256 => {
@@ -226,31 +228,45 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
 
 pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<(u32, u32), Error> {
     let mut window = Vec::<u8>::with_capacity(MAXIMUM_DISTANCE + MAXIMUM_LENGTH);
-    window.resize(MAXIMUM_DISTANCE + MAXIMUM_LENGTH, 0);
     let mut bytes = [0 as u8; MAXIMUM_LENGTH];
     let mut compressed_size: u32 = 0;
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
     writer.write_bits(1, 1, true);
     writer.write_bits(BlockType::FixedHuffman as u16, 2, true);
+    let mut read_len = 0;
     loop {
-        let len = input.read(&mut bytes).unwrap();
-        if len == 0 {
-            break;
+        let mut len = input.read(&mut bytes).unwrap();
+        let mut ended = false;
+        read_len += len;
+        debug!("read len {}", read_len);
+
+        if len < bytes.len() {
+            ended = true;
         }
         let mut nb = 0;
         for i in 0..len {
             let (bits, bits_len) = FIXED_LITERAL_ENC[bytes[i] as usize];
+            debug!("byte {} {:02x}->{} {}", i, bytes[i], bits, bits_len);
             let v = writer.write_bits(bits, bits_len, false);
             nb += v.len();
             window.extend(v.iter());
         }
         try!(output.write(&window[0..nb]));
         hasher.write(&window[0..nb]);
+        debug!("window {} {:?}", window.len(), window);
         window.drain(0..nb);
         compressed_size += nb as u32;
+        debug!("compressed size: {}", compressed_size);
+        if ended {
+            break;
+        }
     }
+    let (bits, bits_len) = FIXED_LITERAL_ENC[256];//end
+    let v = writer.write_bits(bits, bits_len, false);
+    window.extend(v.iter());
     writer.flush().map(|c| { window.push(c); });
+    debug!("window {:?}", window);
     try!(output.write(&window[0..window.len()]));
     hasher.write(&window[0..window.len()]);
     Ok((compressed_size, hasher.sum32()))
@@ -258,9 +274,36 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
+    use env_logger;
+    use rand::{self, Rng};
 
     #[test]
     fn fixed_huffman_literals() {
-        // TODO
+        env_logger::init().unwrap();
+        let uncompressed_len = rand::random::<u16>() as usize;
+        debug!("uncompressed length: {}", uncompressed_len);
+        let mut uncompressed = Vec::<u8>::with_capacity(uncompressed_len);
+        uncompressed.resize(uncompressed_len, 0);
+        let mut rng = rand::thread_rng();
+        rng.fill_bytes(&mut uncompressed);
+        debug!("uncompressed : {:?}", uncompressed);
+        let mut hasher = Digest::new(IEEE);
+        hasher.write(&uncompressed);
+        let crc = hasher.sum32();
+        let mut compressed = Vec::<u8>::new();
+        {
+            let mut reader = BufReader::with_capacity(uncompressed_len, &uncompressed as &[u8]);
+            let mut writer = BufWriter::new(&mut compressed);
+            let (compressed_len, ccrc) = deflate(&mut reader, &mut writer).unwrap();
+            println!("{} {}", compressed_len, ccrc);
+            writer.flush();
+        }
+        let mut reader = BufReader::new(&compressed as &[u8]);
+        let mut decompressed = Vec::<u8>::new();
+        let mut writer = BufWriter::new(&mut decompressed);
+        let (decompressed_len, dcrc) = inflate(&mut reader, &mut writer).unwrap();
+        assert_eq!(uncompressed_len, decompressed_len as usize);
     }
 }

@@ -7,6 +7,11 @@ extern crate num;
 #[macro_use]
 extern crate num_derive;
 
+#[cfg(test)]
+extern crate env_logger;
+#[cfg(test)]
+extern crate rand;
+
 mod bitstream;
 pub mod deflate;
 pub mod gzip;
