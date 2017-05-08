@@ -236,8 +236,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     writer.write_bits(BlockType::FixedHuffman as u16, 2, true);
     let mut read_len = 0;
     loop {
-        let mut len = input.read(&mut bytes).unwrap();
-        let mut ended = false;
+        let len = input.read(&mut bytes).unwrap();
         read_len += len;
         debug!("read len {}", read_len);
 
@@ -295,12 +294,13 @@ mod test {
             let mut writer = BufWriter::new(&mut compressed);
             let (compressed_len, ccrc) = deflate(&mut reader, &mut writer).unwrap();
             println!("{} {}", compressed_len, ccrc);
-            writer.flush();
+            let _ = writer.flush();
         }
         let mut reader = BufReader::new(&compressed as &[u8]);
         let mut decompressed = Vec::<u8>::new();
         let mut writer = BufWriter::new(&mut decompressed);
         let (decompressed_len, dcrc) = inflate(&mut reader, &mut writer).unwrap();
         assert_eq!(uncompressed_len, decompressed_len as usize);
+        assert_eq!(crc, dcrc);
     }
 }
