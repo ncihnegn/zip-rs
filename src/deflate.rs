@@ -11,6 +11,8 @@ use util::*;
 const NUM_LITERAL: u16 = 288;
 const MAXIMUM_DISTANCE: usize = 32 * 1024;
 const MAXIMUM_LENGTH: usize = 258;
+const HCLEN_ORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+const HCLEN_ORDER_INVERTED: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
@@ -47,7 +49,7 @@ fn read_distance<R: Read>(dist_code: u16, reader: &mut BitReader<R>) -> Result<u
 }
 
 fn read_codelens<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, n: usize) -> Result<Vec<u8>, Error> {
-    let mut lens = Vec::<u8>::new();
+    let mut lens = Vec::<u8>::with_capacity(n);
     lens.resize(n, 0);
     let mut index = 0;
     while index < n {
@@ -89,18 +91,50 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     let hlit = try!(reader.read_bits(5, true)) as usize + 257;
     let hdist = try!(reader.read_bits(5, true)) as usize + 1;
     let hclen = try!(reader.read_bits(4, true)) as usize + 4;
-    let mut hclen_len = Vec::<u8>::new();
-    let hclen_order = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
-    let max_hclen = hclen_order.len();
+    let max_hclen = HCLEN_ORDER.len();
+    let mut hclen_len = Vec::<u8>::with_capacity(max_hclen);
     hclen_len.resize(max_hclen, 0);
     assert!(hlit <= 286 && hclen <= max_hclen && hdist <= 32);
     for i in 0..hclen {
-        hclen_len[hclen_order[i]] = try!(reader.read_bits(3, true)) as u8;
+        hclen_len[HCLEN_ORDER[i]] = try!(reader.read_bits(3, true)) as u8;
     }
     let clen_dec = gen_huffman_dec(&hclen_len, max_hclen as u16);
     let hlit_len = try!(read_codelens(reader, &clen_dec, hlit));
     let hdist_len = try!(read_codelens(reader, &clen_dec, hdist));
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
+}
+
+fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
+    let hlit = code_len.len() - 257;
+    let mut v = writer.write_bits(hlit as u16, 5, true);
+    let hdist = 1-1;
+    v.extend(writer.write_bits(hdist as u16, 5, true).iter());
+    let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
+    freq.resize(HCLEN_ORDER.len(), 0);
+    freq[0] = 1;
+    for l in code_len {
+        let ls = *l as usize;
+        assert!(ls < HCLEN_ORDER.len());
+        freq[ls] += 1;
+    }
+    while !freq.is_empty() && *(freq.last().unwrap()) == 0 {
+        let _ = freq.pop();
+    }
+    let hclen = freq.len();
+    v.extend(writer.write_bits((hclen + 4) as u16, 5, true).iter());
+    for i in 0..hclen {
+        v.extend(writer.write_bits())
+    }
+    let clen = assign_lengths(&freq);
+    for i in HCLEN_ORDER.iter() {
+        v.extend(writer.write_bits(*i as u16, 3, true).iter());
+    }
+    let enc = gen_huffman_enc(&clen);
+    for l in code_len {
+        let (bits, bit_len) = enc[*l as usize];
+        v.extend(writer.write_bits(bits, bit_len, false).iter());
+    }
+    return v;
 }
 
 // Not being used
@@ -252,6 +286,8 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     }
     debug!("read len {}", read_len);
     let code_len = assign_lengths(&freq);
+    let v = write_code_table(&mut writer, &code_len);
+    window.extend(v.iter());
     let enc = gen_huffman_enc(&code_len);
     for b in data {
         let (bits, bits_len) = enc[b as usize];
