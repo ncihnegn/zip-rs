@@ -104,29 +104,29 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
 }
 
-fn encode_codelen(clen: &Vec<u8>) -> Vec<u8> {
-    let mut v = Vec::<u8>::new();
+fn encode_codelen(clen: &Vec<u8>) -> Vec<(u8, u8)> {
+    let mut v = Vec::<(u8, u8)>::new();
     let len = clen.len();
     let mut i = 0;
     while i < len {
         for j in (i+1)..len {
-            let repeat = j - 1 - i;
+            let mut repeat = j - 1 - i;
             if clen[j] != clen[i] || (clen[i] == 0 && repeat == 138) ||
                 (clen[i] != 0 && repeat == 6) {
                 if repeat >= 3 {
+                    repeat -= 3;
                     if clen[i] == 0 {
                         match repeat {
-                            3..10 => v.push(17),
-                            11..138 => v.push(18),
+                            0...7 => v.push((17, repeat as u8)),
+                            8...135 => v.push((18, repeat as u8)),
+                            _ => panic!("Illegal Huffman code length")
                         }
-                        v.push(repeat);
                     } else {
-                        v.push(clen[i]);
-                        v.push(repeat);
+                        v.push((clen[i], repeat as u8));
                     }
                     i = j;
                 } else {
-                    v.push(clen[i]);
+                    v.push((clen[i], 0));
                 }
             }
         }
@@ -139,13 +139,14 @@ fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
     let mut v = writer.write_bits(hlit as u16, 5, true);
     let hdist = 1-1;
     v.extend(writer.write_bits(hdist as u16, 5, true).iter());
+    let cclen = encode_codelen(&code_len);
     let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
     freq.resize(HCLEN_ORDER.len(), 0);
-    freq[0] = 1;
-    for l in code_len {
-        let ls = *l as usize;
-        assert!(ls < HCLEN_ORDER.len());
-        freq[ls] += 1;
+    freq[0] = 1;//dist 0
+    for (c, _) in cclen.clone() {
+        let cs = c as usize;
+        debug_assert!(cs < HCLEN_ORDER.len());
+        freq[cs] += 1;
     }
     while freq.len() > 4 && *(freq.last().unwrap()) == 0 {
         let _ = freq.pop();
@@ -160,22 +161,18 @@ fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
         }
     }
     let enc = gen_huffman_enc(&clen);
-    let mut count = -1;
-    let mut prev = code_len[0];
-    for i in 0..code_len.len() {
-        let mut l = code_len[i];
-        if l == prev {
-            count += 1;
-        } else {
-            count = 0;
-            prev = l;
-            l = 
-        }
-        if count == 0 {
-            let (bits, bit_len) = enc[l as usize];
-            v.extend(writer.write_bits(bits, bit_len, false).iter());
+    for (c, r) in cclen {
+        let (bits, bit_len) = enc[c as usize];
+        v.extend(writer.write_bits(bits, bit_len, false).iter());
+        match c {
+            0...15 => {}
+            16 => v.extend(writer.write_bits(r as u16, 2, true)),
+            17 => v.extend(writer.write_bits(r as u16, 3, true)),
+            18 => v.extend(writer.write_bits(r as u16, 7, true)),
+            _ => panic!("Illegal code length Huffman code")
         }
     }
+    //dist
     let (bits, bit_len) = enc[0];
     v.extend(writer.write_bits(bits, bit_len, false).iter());
     return v;
