@@ -12,7 +12,6 @@ const NUM_LITERAL: u16 = 288;
 const MAXIMUM_DISTANCE: usize = 32 * 1024;
 const MAXIMUM_LENGTH: usize = 258;
 const HCLEN_ORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
-const HCLEN_ORDER_INVERTED: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
@@ -56,6 +55,7 @@ fn read_codelens<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, n: u
         let s = try!(read_code(reader, &clen_dec)) as u8;
         let mut count = 0;
         let mut len: u8 = 0;
+        //debug!("code len {}", s);
         match s {
             0...15 => {
                 lens[index] = s;
@@ -104,6 +104,36 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
 }
 
+fn encode_codelen(clen: &Vec<u8>) -> Vec<u8> {
+    let mut v = Vec::<u8>::new();
+    let len = clen.len();
+    let mut i = 0;
+    while i < len {
+        for j in (i+1)..len {
+            let repeat = j - 1 - i;
+            if clen[j] != clen[i] || (clen[i] == 0 && repeat == 138) ||
+                (clen[i] != 0 && repeat == 6) {
+                if repeat >= 3 {
+                    if clen[i] == 0 {
+                        match repeat {
+                            3..10 => v.push(17),
+                            11..138 => v.push(18),
+                        }
+                        v.push(repeat);
+                    } else {
+                        v.push(clen[i]);
+                        v.push(repeat);
+                    }
+                    i = j;
+                } else {
+                    v.push(clen[i]);
+                }
+            }
+        }
+    }
+    return v;
+}
+
 fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
     let hlit = code_len.len() - 257;
     let mut v = writer.write_bits(hlit as u16, 5, true);
@@ -117,23 +147,37 @@ fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
         assert!(ls < HCLEN_ORDER.len());
         freq[ls] += 1;
     }
-    while !freq.is_empty() && *(freq.last().unwrap()) == 0 {
+    while freq.len() > 4 && *(freq.last().unwrap()) == 0 {
         let _ = freq.pop();
     }
     let hclen = freq.len();
-    v.extend(writer.write_bits((hclen + 4) as u16, 5, true).iter());
-    for i in 0..hclen {
-        v.extend(writer.write_bits())
-    }
+    v.extend(writer.write_bits((hclen - 4) as u16, 4, true).iter());
     let clen = assign_lengths(&freq);
     for i in HCLEN_ORDER.iter() {
-        v.extend(writer.write_bits(*i as u16, 3, true).iter());
+        if *i < hclen {
+            debug!("{}", *i);
+            v.extend(writer.write_bits(clen[*i] as u16, 3, true).iter());
+        }
     }
     let enc = gen_huffman_enc(&clen);
-    for l in code_len {
-        let (bits, bit_len) = enc[*l as usize];
-        v.extend(writer.write_bits(bits, bit_len, false).iter());
+    let mut count = -1;
+    let mut prev = code_len[0];
+    for i in 0..code_len.len() {
+        let mut l = code_len[i];
+        if l == prev {
+            count += 1;
+        } else {
+            count = 0;
+            prev = l;
+            l = 
+        }
+        if count == 0 {
+            let (bits, bit_len) = enc[l as usize];
+            v.extend(writer.write_bits(bits, bit_len, false).iter());
+        }
     }
+    let (bits, bit_len) = enc[0];
+    v.extend(writer.write_bits(bits, bit_len, false).iter());
     return v;
 }
 
@@ -286,14 +330,17 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     }
     debug!("read len {}", read_len);
     let code_len = assign_lengths(&freq);
+    debug!("window {:?}", window);
     let v = write_code_table(&mut writer, &code_len);
     window.extend(v.iter());
+    debug!("window {:?}", window);
     let enc = gen_huffman_enc(&code_len);
     for b in data {
         let (bits, bits_len) = enc[b as usize];
         debug!("byte {:02x}->{} {}", b, bits, bits_len);
         let v = writer.write_bits(bits, bits_len, false);
         window.extend(v.iter());
+        debug!("window {:?}", window);
     }
     let (bits, bits_len) = enc[256];//end
     let v = writer.write_bits(bits, bits_len, false);
@@ -315,9 +362,9 @@ mod test {
     use rand::{self, Rng};
 
     #[test]
-    fn fixed_huffman_literals() {
+    fn huffman_literals() {
         env_logger::init().unwrap();
-        let uncompressed_len = rand::random::<u16>() as usize;
+        let uncompressed_len = 1;//rand::random::<u16>() as usize;
         debug!("uncompressed length: {}", uncompressed_len);
         let mut uncompressed = Vec::<u8>::with_capacity(uncompressed_len);
         uncompressed.resize(uncompressed_len, 0);
