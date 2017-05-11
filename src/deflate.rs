@@ -127,15 +127,32 @@ fn encode_codelen(clen: &Vec<u8>) -> Vec<(u8, u8)> {
                     repeat -= 3;
                     if clen[i] == 0 {
                         match repeat {
-                            0...7 => v.push((17, repeat as u8)),
-                            8...135 => v.push((18, (repeat - 8) as u8)),
+                            0...7 => {
+                                v.push((17, repeat as u8));
+                                debug!("({}, {})", 17, repeat);
+                            }
+                            8...135 => {
+                                v.push((18, (repeat - 8) as u8));
+                                debug!("({}, {})", 18, repeat - 8);
+                            }
                             _ => panic!("Illegal Huffman code length")
                         }
                     } else {
-                        v.push((clen[i], repeat as u8));
+                        v.push((clen[i], 0));
+                        debug!("({}, {})", clen[i], 0);
+                        v.push((16, repeat as u8));
+                        debug!("({}, {})", 16, repeat);
                     }
                 } else {
                     v.push((clen[i], 0));
+                    debug!("({}, {})", clen[i], 0);
+                    if clen[i] == 0 && repeat > 0 {
+                        repeat -= 1;
+                    }
+                    for _ in 0..repeat {
+                        v.push((clen[i], 0));
+                        debug!("({}, {})", clen[i], 0);
+                    }
                 }
                 i = j;
                 debug!("currently {}", i);
@@ -350,7 +367,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         debug!("byte {:02x}->{} {}", b, bits, bits_len);
         let v = writer.write_bits(bits, bits_len, false);
         window.extend(v.iter());
-        debug!("window {:?}", window);
+        //debug!("window {:?}", window);
     }
     let (bits, bits_len) = enc[256];//end
     let v = writer.write_bits(bits, bits_len, false);
@@ -374,7 +391,7 @@ mod test {
     #[test]
     fn huffman_literals() {
         env_logger::init().unwrap();
-        let uncompressed_len = 1;//rand::random::<u16>() as usize;
+        let uncompressed_len = rand::random::<u16>() as usize;
         debug!("uncompressed length: {}", uncompressed_len);
         let mut uncompressed = Vec::<u8>::with_capacity(uncompressed_len);
         uncompressed.resize(uncompressed_len, 0);
