@@ -48,6 +48,7 @@ fn read_distance<R: Read>(dist_code: u16, reader: &mut BitReader<R>) -> Result<u
 }
 
 fn read_codelens<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, n: usize) -> Result<Vec<u8>, Error> {
+    debug!("To read {} code lengths", n);
     let mut lens = Vec::<u8>::with_capacity(n);
     lens.resize(n, 0);
     let mut index = 0;
@@ -55,7 +56,7 @@ fn read_codelens<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, n: u
         let s = try!(read_code(reader, &clen_dec)) as u8;
         let mut count = 0;
         let mut len: u8 = 0;
-        //debug!("code len {}", s);
+        debug!("code len {}", s);
         match s {
             0...15 => {
                 lens[index] = s;
@@ -83,6 +84,7 @@ fn read_codelens<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, n: u
             }
             index += count as usize;
         }
+        debug!("index {}", index);
     }
     Ok(lens)
 }
@@ -101,36 +103,47 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     let clen_dec = gen_huffman_dec(&hclen_len, max_hclen as u16);
     let hlit_len = try!(read_codelens(reader, &clen_dec, hlit));
     let hdist_len = try!(read_codelens(reader, &clen_dec, hdist));
+    debug!("Read code table done");
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
 }
 
 fn encode_codelen(clen: &Vec<u8>) -> Vec<(u8, u8)> {
     let mut v = Vec::<(u8, u8)>::new();
     let len = clen.len();
+    debug!("clen {} {:?}", len, clen);
     let mut i = 0;
     while i < len {
+        if i == len-1 {
+            v.push((clen[i], 0));
+            break;
+        }
         for j in (i+1)..len {
             let mut repeat = j - 1 - i;
-            if clen[j] != clen[i] || (clen[i] == 0 && repeat == 138) ||
-                (clen[i] != 0 && repeat == 6) {
+            if clen[i] == 0 {
+                repeat += 1;
+            }
+            if clen[j] != clen[i] || (clen[i] == 0 && repeat == 138) || (clen[i] != 0 && repeat == 6) {
                 if repeat >= 3 {
                     repeat -= 3;
                     if clen[i] == 0 {
                         match repeat {
                             0...7 => v.push((17, repeat as u8)),
-                            8...135 => v.push((18, repeat as u8)),
+                            8...135 => v.push((18, (repeat - 8) as u8)),
                             _ => panic!("Illegal Huffman code length")
                         }
                     } else {
                         v.push((clen[i], repeat as u8));
                     }
-                    i = j;
                 } else {
                     v.push((clen[i], 0));
                 }
+                i = j;
+                debug!("currently {}", i);
+                break;
             }
         }
     }
+    debug!("{:?}", v);
     return v;
 }
 
