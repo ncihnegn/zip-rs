@@ -107,7 +107,7 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
 }
 
-fn encode_codelen(clen: &Vec<u8>) -> Vec<(u8, u8)> {
+fn encode_codelens(clen: &Vec<u8>) -> Vec<(u8, u8)> {
     let mut v = Vec::<(u8, u8)>::new();
     let len = clen.len();
     debug!("clen {} {:?}", len, clen);
@@ -169,7 +169,7 @@ fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
     let mut v = writer.write_bits(hlit as u16, 5, true);
     let hdist = 1-1;
     v.extend(writer.write_bits(hdist as u16, 5, true).iter());
-    let cclen = encode_codelen(&code_len);
+    let cclen = encode_codelens(&code_len);
     let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
     freq.resize(HCLEN_ORDER.len(), 0);
     freq[0] = 1;//dist 0
@@ -390,8 +390,8 @@ mod test {
 
     #[test]
     fn huffman_literals() {
-        env_logger::init().unwrap();
-        let uncompressed_len = rand::random::<u16>() as usize;
+        //env_logger::init().unwrap();
+        let uncompressed_len = 128;//rand::random::<u16>() as usize;
         debug!("uncompressed length: {}", uncompressed_len);
         let mut uncompressed = Vec::<u8>::with_capacity(uncompressed_len);
         uncompressed.resize(uncompressed_len, 0);
@@ -415,5 +415,40 @@ mod test {
         let (decompressed_len, dcrc) = inflate(&mut reader, &mut writer).unwrap();
         assert_eq!(uncompressed_len, decompressed_len as usize);
         assert_eq!(crc, dcrc);
+    }
+
+    #[test]
+    fn codelen() {
+        env_logger::init().unwrap();
+        let len = rand::random::<u16>() as usize;
+        let mut v = Vec::with_capacity(len);
+        v.resize(len, 0);
+        let mut rng = rand::thread_rng();
+        for i in 0..len {
+            v[i] = rng.gen_range(0, 16);//[0,16)
+        }
+        let clens = encode_codelens(&v);
+        let mut d = Vec::<u8>::with_capacity(len);
+        for (c, r) in clens {
+            match c {
+                0...15 => d.push(c),
+                16 => {
+                    let c = d.pop().unwrap();
+                    d.push(c);
+                    for _ in 0..(r+3) {
+                        d.push(c);
+                    }
+                }
+                17...18 => {
+                    let rep = if c == 17 { r + 3 } else { r + 11 };
+                    for _ in 0..rep {
+                        d.push(0);
+                    }
+                }
+                _ => panic!("Illegal clen character")
+            }
+        }
+        assert_eq!(v.len(), d.len());
+        assert_eq!(v, d);
     }
 }
