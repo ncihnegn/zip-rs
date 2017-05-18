@@ -418,8 +418,7 @@ mod test {
     }
 
     #[test]
-    fn codelen() {
-        env_logger::init().unwrap();
+    fn codelen_alphabet() {
         let len = rand::random::<u16>() as usize;
         let mut v = Vec::with_capacity(len);
         v.resize(len, 0);
@@ -429,6 +428,76 @@ mod test {
         }
         let clens = encode_codelens(&v);
         let mut d = Vec::<u8>::with_capacity(len);
+        for (c, r) in clens {
+            match c {
+                0...15 => d.push(c),
+                16 => {
+                    let c = d.pop().unwrap();
+                    d.push(c);
+                    for _ in 0..(r+3) {
+                        d.push(c);
+                    }
+                }
+                17...18 => {
+                    let rep = if c == 17 { r + 3 } else { r + 11 };
+                    for _ in 0..rep {
+                        d.push(0);
+                    }
+                }
+                _ => panic!("Illegal clen character")
+            }
+        }
+        assert_eq!(v.len(), d.len());
+        assert_eq!(v, d);
+    }
+
+    #[test]
+    fn codelen_huffman() {
+        let len = rand::random::<u16>() as usize;
+        let mut v = Vec::with_capacity(len);
+        v.resize(len, 0);
+        let mut rng = rand::thread_rng();
+        for i in 0..len {
+            v[i] = rng.gen_range(0, 16);//[0,16)
+        }
+        let clens = encode_codelens(&v);
+        let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
+        freq.resize(HCLEN_ORDER.len(), 0);
+        for (c, _) in clens {
+            let cs = c as usize;
+            debug_assert!(cs < HCLEN_ORDER.len());
+            freq[cs] += 1;
+        }
+        while freq.len() > 4 && *(freq.last().unwrap()) == 0 {
+            let _ = freq.pop();
+        }
+        let hclen = freq.len();
+        let mut writer = BitWriter::new();
+        let mut encoded = Vec::new();
+        {
+            let clens = assign_lengths(&freq);
+            for i in HCLEN_ORDER.iter() {
+                if *i < hclen {
+                    debug!("{}", *i);
+                    encoded.extend(writer.write_bits(clens[*i] as u16, 3, true).iter());
+                }
+            }
+            let enc = gen_huffman_enc(&clens);
+            for (c, r) in clens {
+                let (bits, bit_len) = enc[c as usize];
+                encoded.extend(writer.write_bits(bits, bit_len, false).iter());
+                match c {
+                    0...15 => {}
+                    16 => encoded.extend(writer.write_bits(r as u16, 2, true)),
+                    17 => encoded.extend(writer.write_bits(r as u16, 3, true)),
+                    18 => encoded.extend(writer.write_bits(r as u16, 7, true)),
+                    _ => panic!("Illegal code length Huffman code")
+                }
+            }
+            encoded.extend(writer.flush());
+        }
+        let mut d = Vec::<u8>::with_capacity(len);
+        let clens = Vec::<(u8, u8)>::new();
         for (c, r) in clens {
             match c {
                 0...15 => d.push(c),
