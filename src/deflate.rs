@@ -113,6 +113,7 @@ fn encode_codelens(clen: &Vec<u8>) -> Vec<(u8, u8)> {
     debug!("clen {} {:?}", len, clen);
     let mut i = 0;
     while i < len {
+        debug!("currently {}", i);
         if i == len-1 {
             v.push((clen[i], 0));
             break;
@@ -124,7 +125,7 @@ fn encode_codelens(clen: &Vec<u8>) -> Vec<(u8, u8)> {
                 repeat += 1;
             }
             next = j;
-            if clen[j] != clen[i] || (clen[i] == 0 && repeat == 138) || (clen[i] != 0 && repeat == 6) {
+            if clen[j] != clen[i] || j == len-1 || (clen[i] == 0 && repeat == 138) || (clen[i] != 0 && repeat == 6) {
                 if repeat >= 3 {
                     repeat -= 3;
                     if clen[i] == 0 {
@@ -156,7 +157,6 @@ fn encode_codelens(clen: &Vec<u8>) -> Vec<(u8, u8)> {
                         debug!("({}, {})", clen[i], 0);
                     }
                 }
-                debug!("currently {}", i);
                 break;
             }
         }
@@ -180,18 +180,21 @@ fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
         debug_assert!(cs < HCLEN_ORDER.len());
         freq[cs] += 1;
     }
-    let mut clen = assign_lengths(&freq);
-    while clen.len() > 4 && *(clen.last().unwrap()) == 0 {
-        let _ = clen.pop();
+    let clen = assign_lengths(&freq);
+    let mut mapped_clen = Vec::new();
+    mapped_clen.resize(HCLEN_ORDER.len(), 0);
+    for i in 0..clen.len() {
+        mapped_clen[i] = clen[HCLEN_ORDER[i]];
     }
-    let hclen = clen.len();
+    while mapped_clen.len() > 4 && *(mapped_clen.last().unwrap()) == 0 {
+        let _ = mapped_clen.pop();
+    }
+    let hclen = mapped_clen.len();
     v.extend(writer.write_bits((hclen - 4) as u16, 4, true).iter());
     debug!("Write clen codes");
-    for i in HCLEN_ORDER.iter() {
-        if *i < hclen {
-            debug!("{}", *i);
-            v.extend(writer.write_bits(clen[*i] as u16, 3, true).iter());
-        }
+    for i in 0..hclen {
+        v.extend(writer.write_bits(mapped_clen[i] as u16, 3, true).iter());
+        debug!("{}->{}", HCLEN_ORDER[i], mapped_clen[i]);
     }
     let enc = gen_huffman_enc(&clen);
     debug!("Write lit code lengths");
@@ -287,10 +290,13 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         match lit {
             0...255 => {
                 let byte = lit as u8;
+                debug!("byte {}", byte);
                 if window.len() == MAXIMUM_DISTANCE {
-                    let byte: [u8; 1] = [window.remove(0); 1];
-                    try!(output.write(&byte));
-                    hasher.write(&byte);
+                    let b: [u8; 1] = [window.remove(0); 1];
+                    debug!("write");
+                    try!(output.write(&b));
+                    debug!("hasher");
+                    hasher.write(&b);
                 }
                 window.push(byte);
                 debug!("lit {}: {:02x}", decompressed_size, lit);
@@ -409,8 +415,7 @@ mod test {
 
     #[test]
     fn huffman_literals() {
-        //env_logger::init().unwrap();
-        let uncompressed_len = 128;//rand::random::<u16>() as usize;
+        let uncompressed_len = rand::random::<u16>() as usize;
         debug!("uncompressed length: {}", uncompressed_len);
         let mut uncompressed = Vec::<u8>::with_capacity(uncompressed_len);
         uncompressed.resize(uncompressed_len, 0);
@@ -425,7 +430,7 @@ mod test {
             let mut reader = BufReader::new(&uncompressed as &[u8]);
             let mut writer = BufWriter::new(&mut compressed);
             let (compressed_len, ccrc) = deflate(&mut reader, &mut writer).unwrap();
-            println!("{} {}", compressed_len, ccrc);
+            debug!("compressed {} {}", compressed_len, ccrc);
             let _ = writer.flush();
         }
         let mut reader = BufReader::new(&compressed as &[u8]);
@@ -445,7 +450,9 @@ mod test {
         for i in 0..len {
             v[i] = rng.gen_range(0, 16);//[0,16)
         }
+        debug!("{:?}", v);
         let clens = encode_codelens(&v);
+        debug!("{:?}", clens);
         let mut d = Vec::<u8>::with_capacity(len);
         for (c, r) in clens {
             match c {
@@ -466,12 +473,14 @@ mod test {
                 _ => panic!("Illegal clen character")
             }
         }
+        debug!("{:?}", d);
         assert_eq!(v.len(), d.len());
         assert_eq!(v, d);
     }
 
     #[test]
     fn codelen_huffman() {
+        env_logger::init().unwrap();
         let len = rand::random::<u16>() as usize;
         let mut v = Vec::with_capacity(len);
         v.resize(len, 0);
@@ -482,26 +491,31 @@ mod test {
         let clens = encode_codelens(&v);
         let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
         freq.resize(HCLEN_ORDER.len(), 0);
-        for (c, _) in clens {
+        for (c, _) in clens.clone() {
             let cs = c as usize;
             debug_assert!(cs < HCLEN_ORDER.len());
             freq[cs] += 1;
         }
-        while freq.len() > 4 && *(freq.last().unwrap()) == 0 {
-            let _ = freq.pop();
+        let clen = assign_lengths(&freq);
+        let mut mapped_clen = Vec::new();
+        mapped_clen.resize(HCLEN_ORDER.len(), 0);
+        for i in 0..clen.len() {
+            mapped_clen[i] = clen[HCLEN_ORDER[i]];
         }
-        let hclen = freq.len();
+        while mapped_clen.len() > 4 && *(mapped_clen.last().unwrap()) == 0 {
+            let _ = mapped_clen.pop();
+        }
+        let hclen = mapped_clen.len();
         let mut writer = BitWriter::new();
         let mut encoded = Vec::new();
         {
-            let clens = assign_lengths(&freq);
-            for i in HCLEN_ORDER.iter() {
-                if *i < hclen {
-                    debug!("{}", *i);
-                    encoded.extend(writer.write_bits(clens[*i] as u16, 3, true).iter());
-                }
+            encoded.extend(writer.write_bits(hclen as u16 -4, 4, true).iter());
+            debug!("{:?}", clen);
+            for i in 0..hclen {
+                encoded.extend(writer.write_bits(mapped_clen[i] as u16, 3, true).iter());
+                debug!("{}->{}", HCLEN_ORDER[i], mapped_clen[i]);
             }
-            let enc = gen_huffman_enc(&clens);
+            let enc = gen_huffman_enc(&clen);
             for (c, r) in clens {
                 let (bits, bit_len) = enc[c as usize];
                 encoded.extend(writer.write_bits(bits, bit_len, false).iter());
@@ -515,28 +529,21 @@ mod test {
             }
             encoded.extend(writer.flush());
         }
-        let mut d = Vec::<u8>::with_capacity(len);
-        let clens = Vec::<(u8, u8)>::new();
-        for (c, r) in clens {
-            match c {
-                0...15 => d.push(c),
-                16 => {
-                    let c = d.pop().unwrap();
-                    d.push(c);
-                    for _ in 0..(r+3) {
-                        d.push(c);
-                    }
-                }
-                17...18 => {
-                    let rep = if c == 17 { r + 3 } else { r + 11 };
-                    for _ in 0..rep {
-                        d.push(0);
-                    }
-                }
-                _ => panic!("Illegal clen character")
-            }
+        let mut input = BufReader::new(&encoded as &[u8]);
+        let mut reader = BitReader::new(&mut input);
+        let hclen = reader.read_bits(4, true).unwrap() as usize + 4;
+        let max_hclen = HCLEN_ORDER.len();
+        let mut hclen_len = Vec::<u8>::with_capacity(max_hclen);
+        hclen_len.resize(max_hclen, 0);
+        for i in 0..hclen {
+            hclen_len[HCLEN_ORDER[i]] = reader.read_bits(3, true).unwrap() as u8;
+            debug!("{}->{}", i, hclen_len[HCLEN_ORDER[i]]);
         }
-        assert_eq!(v.len(), d.len());
-        assert_eq!(v, d);
+        debug!("{:?}", hclen_len);
+        let clen_dec = gen_huffman_dec(&hclen_len, max_hclen as u16);
+        debug!("{:?}", clen_dec);
+        let hlit_len = read_codelens(&mut reader, &clen_dec, len).unwrap();
+        assert_eq!(v.len(), hlit_len.len());
+        assert_eq!(v, hlit_len);
     }
 }

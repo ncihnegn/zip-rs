@@ -34,6 +34,7 @@ impl PartialOrd for Char {
     }
 }
 
+#[derive(Debug)]
 pub struct HuffmanDec {
     count: Vec<u16>,
     symbol: Vec<u16>,
@@ -186,6 +187,7 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
         let count = dec.count[b];
         debug!("bits: {}", bits);
         if bits >= first && bits < first + count {
+            assert!(index + bits - first < dec.symbol.len() as u16);
             return Ok(dec.symbol[(index + bits - first) as usize]);
         }
         index += count;
