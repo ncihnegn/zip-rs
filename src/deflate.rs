@@ -110,59 +110,55 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
 fn encode_codelens(clen: &Vec<u8>) -> Vec<(u8, u8)> {
     let mut v = Vec::<(u8, u8)>::new();
     let len = clen.len();
-    debug!("clen {} {:?}", len, clen);
-    let mut i = 0;
-    while i < len {
-        debug!("currently {}", i);
-        if i == len-1 {
-            v.push((clen[i], 0));
-            break;
-        }
-        let mut next = i+1;
-        for j in (i+1)..len {
-            let mut repeat = j - 1 - i;
-            if clen[i] == 0 {
-                repeat += 1;
-            }
-            next = j;
-            if clen[j] != clen[i] || j == len-1 || (clen[i] == 0 && repeat == 138) || (clen[i] != 0 && repeat == 6) {
-                if repeat >= 3 {
-                    repeat -= 3;
-                    if clen[i] == 0 {
-                        match repeat {
-                            0...7 => {
-                                v.push((17, repeat as u8));
-                                debug!("({}, {})", 17, repeat);
-                            }
-                            8...135 => {
-                                v.push((18, (repeat - 8) as u8));
-                                debug!("({}, {})", 18, repeat - 8);
-                            }
-                            _ => panic!("Illegal Huffman code length")
-                        }
-                    } else {
-                        v.push((clen[i], 0));
-                        debug!("({}, {})", clen[i], 0);
-                        v.push((16, repeat as u8));
-                        debug!("({}, {})", 16, repeat);
-                    }
-                } else {
-                    v.push((clen[i], 0));
-                    debug!("({}, {})", clen[i], 0);
-                    if clen[i] == 0 && repeat > 0 {
-                        repeat -= 1;
-                    }
-                    for _ in 0..repeat {
-                        v.push((clen[i], 0));
-                        debug!("({}, {})", clen[i], 0);
-                    }
-                }
-                break;
-            }
-        }
-        i = next;
+    if len == 0 {
+        debug!("Empty code lengths");
+        return v;
     }
-    debug!("{:?}", v);
+    let mut repeat = 0;
+    let mut prev = 0;//implicitly add one for repeat zeros
+    for i in 0..len {
+        let cur = clen[i];
+        let mut cur_dump = true;
+        if cur == prev && (repeat < 6 || cur == 0) && repeat < 138 {
+            repeat += 1;
+            if i != len-1 {
+                continue;
+            }
+            cur_dump = false;
+        }
+        match repeat {
+            0 => {
+                if i > 0 {
+                    v.push((prev, 0));
+                }
+            }
+            1...2 => {
+                if prev != 0 {
+                    repeat += 1;
+                }
+                for _ in 0..repeat {
+                    v.push((prev, 0));
+                }
+            }
+            3...10 => {
+                if prev != 0 {
+                    v.push((prev, 0));
+                }
+                v.push((if prev == 0 {17} else {16}, repeat - 3));
+            }
+            11...138 => v.push((18, repeat - 11)),
+            _ => panic!("Illegal repeat"),
+        }
+        if cur_dump && i == len-1 {
+            v.push((cur, 0));
+        }
+        if cur != 0 {
+            repeat = 0;
+        } else {
+            repeat = 1;
+        }
+        prev = cur;
+    }
     return v;
 }
 
@@ -443,6 +439,7 @@ mod test {
 
     #[test]
     fn codelen_alphabet() {
+        env_logger::init().unwrap();
         let len = rand::random::<u16>() as usize;
         let mut v = Vec::with_capacity(len);
         v.resize(len, 0);
@@ -480,7 +477,6 @@ mod test {
 
     #[test]
     fn codelen_huffman() {
-        env_logger::init().unwrap();
         let len = rand::random::<u16>() as usize;
         let mut v = Vec::with_capacity(len);
         v.resize(len, 0);
