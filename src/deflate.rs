@@ -117,11 +117,13 @@ fn encode_codelens(clen: &Vec<u8>) -> Vec<(u8, u8)> {
             v.push((clen[i], 0));
             break;
         }
+        let mut next = i+1;
         for j in (i+1)..len {
             let mut repeat = j - 1 - i;
             if clen[i] == 0 {
                 repeat += 1;
             }
+            next = j;
             if clen[j] != clen[i] || (clen[i] == 0 && repeat == 138) || (clen[i] != 0 && repeat == 6) {
                 if repeat >= 3 {
                     repeat -= 3;
@@ -154,11 +156,11 @@ fn encode_codelens(clen: &Vec<u8>) -> Vec<(u8, u8)> {
                         debug!("({}, {})", clen[i], 0);
                     }
                 }
-                i = j;
                 debug!("currently {}", i);
                 break;
             }
         }
+        i = next;
     }
     debug!("{:?}", v);
     return v;
@@ -178,12 +180,13 @@ fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
         debug_assert!(cs < HCLEN_ORDER.len());
         freq[cs] += 1;
     }
-    while freq.len() > 4 && *(freq.last().unwrap()) == 0 {
-        let _ = freq.pop();
+    let mut clen = assign_lengths(&freq);
+    while clen.len() > 4 && *(clen.last().unwrap()) == 0 {
+        let _ = clen.pop();
     }
-    let hclen = freq.len();
+    let hclen = clen.len();
     v.extend(writer.write_bits((hclen - 4) as u16, 4, true).iter());
-    let clen = assign_lengths(&freq);
+    debug!("Write clen codes");
     for i in HCLEN_ORDER.iter() {
         if *i < hclen {
             debug!("{}", *i);
@@ -191,18 +194,34 @@ fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
         }
     }
     let enc = gen_huffman_enc(&clen);
+    debug!("Write lit code lengths");
+    let mut index: u16 = 0;
     for (c, r) in cclen {
+        debug!("{}, {}", c, r);
         let (bits, bit_len) = enc[c as usize];
         v.extend(writer.write_bits(bits, bit_len, false).iter());
         match c {
-            0...15 => {}
-            16 => v.extend(writer.write_bits(r as u16, 2, true)),
-            17 => v.extend(writer.write_bits(r as u16, 3, true)),
-            18 => v.extend(writer.write_bits(r as u16, 7, true)),
+            0...15 => {
+                index += 1;
+            }
+            16 => {
+                v.extend(writer.write_bits(r as u16, 2, true));
+                index += r as u16 +3;
+            }
+            17 => {
+                v.extend(writer.write_bits(r as u16, 3, true));
+                index += r as u16 +3;
+            }
+            18 => {
+                v.extend(writer.write_bits(r as u16, 7, true));
+                index += r as u16 +11;
+            }
             _ => panic!("Illegal code length Huffman code")
         }
+        debug!("index {}", index);
     }
     //dist
+    debug!("Write dist code lengths");
     let (bits, bit_len) = enc[0];
     v.extend(writer.write_bits(bits, bit_len, false).iter());
     return v;
