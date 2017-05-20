@@ -525,24 +525,7 @@ mod test {
                 debug!("{}->{}", HCLEN_ORDER[i], mapped_clen[i]);
             }
             let enc = gen_huffman_enc(&clen);
-            for cl in clens {
-                match cl {
-                    CodeLength::Single(c) => {
-                        let (bits, bit_len) = enc[c as usize];
-                        encoded.extend(writer.write_bits(bits, bit_len, false).iter());
-                    }
-                    CodeLength::Repeat(l, r) => {
-                        let (bits, bit_len) = enc[l as usize];
-                        encoded.extend(writer.write_bits(bits, bit_len, false).iter());
-                        match l {
-                            16 => encoded.extend(writer.write_bits(r as u16, 2, true)),
-                            17 => encoded.extend(writer.write_bits(r as u16, 3, true)),
-                            18 => encoded.extend(writer.write_bits(r as u16, 7, true)),
-                            _ => panic!("Illegal CodeLength::Repeat")
-                        }
-                    }
-                }
-            }
+            encoded.extend(write_code_lengths(&mut writer, &clens, &enc));
             encoded.extend(writer.flush());
         }
         let mut input = BufReader::new(&encoded as &[u8]);
