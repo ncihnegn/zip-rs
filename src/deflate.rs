@@ -21,6 +21,12 @@ enum BlockType {
     DynamicHuffman = 2,
 }
 
+#[derive(Clone, Debug)]
+enum CodeLength {
+    Single(u8),
+    Repeat(u8, u8)
+}
+
 //static fixed_lit_count: Vec<u16> = vec!(0,0,0,0,0,0,280-256,144+288-280,256-244);
 
 fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> Result<u16, Error> {
@@ -107,8 +113,8 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
 }
 
-fn encode_codelens(clen: &Vec<u8>) -> Vec<(u8, u8)> {
-    let mut v = Vec::<(u8, u8)>::new();
+fn encode_code_lengths(clen: &Vec<u8>) -> Vec<CodeLength> {
+    let mut v = Vec::<CodeLength>::new();
     let len = clen.len();
     if len == 0 {
         debug!("Empty code lengths");
@@ -129,7 +135,7 @@ fn encode_codelens(clen: &Vec<u8>) -> Vec<(u8, u8)> {
         match repeat {
             0 => {
                 if i > 0 {
-                    v.push((prev, 0));
+                    v.push(CodeLength::Single(prev));
                 }
             }
             1...2 => {
@@ -137,20 +143,20 @@ fn encode_codelens(clen: &Vec<u8>) -> Vec<(u8, u8)> {
                     repeat += 1;
                 }
                 for _ in 0..repeat {
-                    v.push((prev, 0));
+                    v.push(CodeLength::Single(prev));
                 }
             }
             3...10 => {
                 if prev != 0 {
-                    v.push((prev, 0));
+                    v.push(CodeLength::Single(prev));
                 }
-                v.push((if prev == 0 {17} else {16}, repeat - 3));
+                v.push(CodeLength::Repeat(if prev == 0 {17} else {16}, repeat - 3));
             }
-            11...138 => v.push((18, repeat - 11)),
+            11...138 => v.push(CodeLength::Repeat(18, repeat - 11)),
             _ => panic!("Illegal repeat"),
         }
         if cur_dump && i == len-1 {
-            v.push((cur, 0));
+            v.push(CodeLength::Single(cur));
         }
         if cur != 0 {
             repeat = 0;
@@ -167,14 +173,15 @@ fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
     let mut v = writer.write_bits(hlit as u16, 5, true);
     let hdist = 1-1;
     v.extend(writer.write_bits(hdist as u16, 5, true).iter());
-    let cclen = encode_codelens(&code_len);
+    let cclen = encode_code_lengths(&code_len);
     let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
     freq.resize(HCLEN_ORDER.len(), 0);
     freq[0] = 1;//dist 0
-    for (c, _) in cclen.clone() {
-        let cs = c as usize;
-        debug_assert!(cs < HCLEN_ORDER.len());
-        freq[cs] += 1;
+    for cl in cclen.clone() {
+        match cl {
+            CodeLength::Single(c) => freq[c as usize] += 1,
+            CodeLength::Repeat(c, _) => freq[c as usize] += 1
+        }
     }
     let clen = assign_lengths(&freq);
     let mut mapped_clen = Vec::new();
@@ -195,28 +202,33 @@ fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
     let enc = gen_huffman_enc(&clen);
     debug!("Write lit code lengths");
     let mut index: u16 = 0;
-    for (c, r) in cclen {
-        debug!("{}, {}", c, r);
-        let (bits, bit_len) = enc[c as usize];
-        v.extend(writer.write_bits(bits, bit_len, false).iter());
-        match c {
-            0...15 => {
+    for cl in cclen {
+        match cl {
+            CodeLength::Single(c) => {
+                let (bits, bit_len) = enc[c as usize];
+                v.extend(writer.write_bits(bits, bit_len, false).iter());
                 index += 1;
             }
-            16 => {
-                v.extend(writer.write_bits(r as u16, 2, true));
-                index += r as u16 +3;
+            CodeLength::Repeat(l, r) => {
+                let (bits, bit_len) = enc[l as usize];
+                v.extend(writer.write_bits(bits, bit_len, false).iter());
+                match l {
+                    16 => {
+                        v.extend(writer.write_bits(r as u16, 2, true));
+                        index += r as u16 +3;
+                    }
+                    17 => {
+                        v.extend(writer.write_bits(r as u16, 3, true));
+                        index += r as u16 +3;
+                    }
+                    18 => {
+                        v.extend(writer.write_bits(r as u16, 7, true));
+                        index += r as u16 +11;
+                    }
+                    _ => panic!("Illegal code length Huffman code")
+                }
             }
-            17 => {
-                v.extend(writer.write_bits(r as u16, 3, true));
-                index += r as u16 +3;
-            }
-            18 => {
-                v.extend(writer.write_bits(r as u16, 7, true));
-                index += r as u16 +11;
-            }
-            _ => panic!("Illegal code length Huffman code")
-        }
+        };
         debug!("index {}", index);
     }
     //dist
@@ -448,26 +460,26 @@ mod test {
             v[i] = rng.gen_range(0, 16);//[0,16)
         }
         debug!("{:?}", v);
-        let clens = encode_codelens(&v);
+        let clens = encode_code_lengths(&v);
         debug!("{:?}", clens);
         let mut d = Vec::<u8>::with_capacity(len);
-        for (c, r) in clens {
-            match c {
-                0...15 => d.push(c),
-                16 => {
-                    let c = d.pop().unwrap();
-                    d.push(c);
-                    for _ in 0..(r+3) {
+        for cl in clens {
+            match cl {
+                CodeLength::Single(c) => d.push(c),
+                CodeLength::Repeat(l, r) => {
+                    if l == 16 {
+                        let c = d.pop().unwrap();
                         d.push(c);
+                        for _ in 0..(r+3) {
+                            d.push(c);
+                        }
+                    } else {
+                        let rep = if l == 17 { r + 3 } else { r + 11 };
+                        for _ in 0..rep {
+                            d.push(0);
+                        }
                     }
                 }
-                17...18 => {
-                    let rep = if c == 17 { r + 3 } else { r + 11 };
-                    for _ in 0..rep {
-                        d.push(0);
-                    }
-                }
-                _ => panic!("Illegal clen character")
             }
         }
         debug!("{:?}", d);
@@ -484,13 +496,14 @@ mod test {
         for i in 0..len {
             v[i] = rng.gen_range(0, 16);//[0,16)
         }
-        let clens = encode_codelens(&v);
+        let clens = encode_code_lengths(&v);
         let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
         freq.resize(HCLEN_ORDER.len(), 0);
-        for (c, _) in clens.clone() {
-            let cs = c as usize;
-            debug_assert!(cs < HCLEN_ORDER.len());
-            freq[cs] += 1;
+        for cl in clens.clone() {
+            match cl {
+                CodeLength::Single(c) => freq[c as usize] += 1,
+                CodeLength::Repeat(l, _) => freq[l as usize] += 1
+            }
         }
         let clen = assign_lengths(&freq);
         let mut mapped_clen = Vec::new();
@@ -512,15 +525,22 @@ mod test {
                 debug!("{}->{}", HCLEN_ORDER[i], mapped_clen[i]);
             }
             let enc = gen_huffman_enc(&clen);
-            for (c, r) in clens {
-                let (bits, bit_len) = enc[c as usize];
-                encoded.extend(writer.write_bits(bits, bit_len, false).iter());
-                match c {
-                    0...15 => {}
-                    16 => encoded.extend(writer.write_bits(r as u16, 2, true)),
-                    17 => encoded.extend(writer.write_bits(r as u16, 3, true)),
-                    18 => encoded.extend(writer.write_bits(r as u16, 7, true)),
-                    _ => panic!("Illegal code length Huffman code")
+            for cl in clens {
+                match cl {
+                    CodeLength::Single(c) => {
+                        let (bits, bit_len) = enc[c as usize];
+                        encoded.extend(writer.write_bits(bits, bit_len, false).iter());
+                    }
+                    CodeLength::Repeat(l, r) => {
+                        let (bits, bit_len) = enc[l as usize];
+                        encoded.extend(writer.write_bits(bits, bit_len, false).iter());
+                        match l {
+                            16 => encoded.extend(writer.write_bits(r as u16, 2, true)),
+                            17 => encoded.extend(writer.write_bits(r as u16, 3, true)),
+                            18 => encoded.extend(writer.write_bits(r as u16, 7, true)),
+                            _ => panic!("Illegal CodeLength::Repeat")
+                        }
+                    }
                 }
             }
             encoded.extend(writer.flush());
