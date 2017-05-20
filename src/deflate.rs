@@ -168,16 +168,22 @@ fn encode_code_lengths(clen: &Vec<u8>) -> Vec<CodeLength> {
     return v;
 }
 
-fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
-    let hlit = code_len.len() - 257;
+fn write_code_table(writer: &mut BitWriter, lit_clens: &Vec<u8>, dist_clens: &Vec<u8>) -> Vec<u8> {
+    let hlit = lit_clens.len() - 257;
     let mut v = writer.write_bits(hlit as u16, 5, true);
-    let hdist = 1-1;
+    let hdist = dist_clens.len()-1;
     v.extend(writer.write_bits(hdist as u16, 5, true).iter());
-    let cclen = encode_code_lengths(&code_len);
+    let lit_eclens = encode_code_lengths(&lit_clens);
+    let dist_eclens = encode_code_lengths(&dist_clens);
     let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
     freq.resize(HCLEN_ORDER.len(), 0);
-    freq[0] = 1;//dist 0
-    for cl in cclen.clone() {
+    for cl in lit_eclens.clone() {
+        match cl {
+            CodeLength::Single(c) => freq[c as usize] += 1,
+            CodeLength::Repeat(c, _) => freq[c as usize] += 1
+        }
+    }
+    for cl in dist_eclens.clone() {
         match cl {
             CodeLength::Single(c) => freq[c as usize] += 1,
             CodeLength::Repeat(c, _) => freq[c as usize] += 1
@@ -201,40 +207,31 @@ fn write_code_table(writer: &mut BitWriter, code_len: &Vec<u8>) -> Vec<u8> {
     }
     let enc = gen_huffman_enc(&clen);
     debug!("Write lit code lengths");
-    let mut index: u16 = 0;
-    for cl in cclen {
-        match cl {
+    v.extend(write_code_lengths(writer, &lit_eclens, &enc).iter());
+    v.extend(write_code_lengths(writer, &dist_eclens, &enc).iter());
+    return v;
+}
+
+fn write_code_lengths(writer: &mut BitWriter, eclens: &Vec<CodeLength>, enc: &Vec<(Bits, u8)>) -> Vec<u8> {
+    let mut v = Vec::new();
+    for cl in eclens {
+        match *cl {
             CodeLength::Single(c) => {
                 let (bits, bit_len) = enc[c as usize];
                 v.extend(writer.write_bits(bits, bit_len, false).iter());
-                index += 1;
             }
             CodeLength::Repeat(l, r) => {
                 let (bits, bit_len) = enc[l as usize];
                 v.extend(writer.write_bits(bits, bit_len, false).iter());
                 match l {
-                    16 => {
-                        v.extend(writer.write_bits(r as u16, 2, true));
-                        index += r as u16 +3;
-                    }
-                    17 => {
-                        v.extend(writer.write_bits(r as u16, 3, true));
-                        index += r as u16 +3;
-                    }
-                    18 => {
-                        v.extend(writer.write_bits(r as u16, 7, true));
-                        index += r as u16 +11;
-                    }
+                    16 => v.extend(writer.write_bits(r as u16, 2, true)),
+                    17 => v.extend(writer.write_bits(r as u16, 3, true)),
+                    18 => v.extend(writer.write_bits(r as u16, 7, true)),
                     _ => panic!("Illegal code length Huffman code")
                 }
             }
         };
-        debug!("index {}", index);
     }
-    //dist
-    debug!("Write dist code lengths");
-    let (bits, bit_len) = enc[0];
-    v.extend(writer.write_bits(bits, bit_len, false).iter());
     return v;
 }
 
@@ -391,7 +388,10 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     debug!("read len {}", read_len);
     let code_len = assign_lengths(&freq);
     debug!("window {:?}", window);
-    let v = write_code_table(&mut writer, &code_len);
+
+    let mut dist_clens = Vec::new();
+    dist_clens.push(0);
+    let v = write_code_table(&mut writer, &code_len, &dist_clens);
     window.extend(v.iter());
     debug!("window {:?}", window);
     let enc = gen_huffman_enc(&code_len);
