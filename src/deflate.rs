@@ -177,14 +177,14 @@ fn write_code_table(writer: &mut BitWriter, lit_clens: &Vec<u8>, dist_clens: &Ve
     let dist_eclens = encode_code_lengths(&dist_clens);
     let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
     freq.resize(HCLEN_ORDER.len(), 0);
-    for cl in lit_eclens.clone() {
-        match cl {
+    for cl in lit_eclens.iter() {
+        match *cl {
             CodeLength::Single(c) => freq[c as usize] += 1,
             CodeLength::Repeat(c, _) => freq[c as usize] += 1
         }
     }
-    for cl in dist_eclens.clone() {
-        match cl {
+    for cl in dist_eclens.iter() {
+        match *cl {
             CodeLength::Single(c) => freq[c as usize] += 1,
             CodeLength::Repeat(c, _) => freq[c as usize] += 1
         }
@@ -499,8 +499,8 @@ mod test {
         let clens = encode_code_lengths(&v);
         let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
         freq.resize(HCLEN_ORDER.len(), 0);
-        for cl in clens.clone() {
-            match cl {
+        for cl in clens.iter() {
+            match *cl {
                 CodeLength::Single(c) => freq[c as usize] += 1,
                 CodeLength::Repeat(l, _) => freq[l as usize] += 1
             }
