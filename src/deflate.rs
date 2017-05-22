@@ -24,7 +24,18 @@ enum BlockType {
 #[derive(Clone, Debug)]
 enum CodeLength {
     Single(u8),
-    Repeat(u8, u8)
+    Repeat {
+        code: u8,
+        repeat: u8
+    }
+}
+
+pub enum LZ77 {
+    Literal(u16),
+    Copy {
+        len: u16,
+        dist: u16
+    }
 }
 
 //static fixed_lit_count: Vec<u16> = vec!(0,0,0,0,0,0,280-256,144+288-280,256-244);
@@ -150,9 +161,12 @@ fn encode_code_lengths(clen: &Vec<u8>) -> Vec<CodeLength> {
                 if prev != 0 {
                     v.push(CodeLength::Single(prev));
                 }
-                v.push(CodeLength::Repeat(if prev == 0 {17} else {16}, repeat - 3));
+                v.push(CodeLength::Repeat {
+                    code: if prev == 0 {17} else {16},
+                    repeat: repeat - 3
+                });
             }
-            11...138 => v.push(CodeLength::Repeat(18, repeat - 11)),
+            11...138 => v.push(CodeLength::Repeat { code: 18, repeat: repeat - 11 } ),
             _ => panic!("Illegal repeat"),
         }
         if cur_dump && i == len-1 {
@@ -172,7 +186,7 @@ fn update_freq(freq: &mut Vec<usize>, eclens: &Vec<CodeLength>) {
     for cl in eclens.iter() {
         match *cl {
             CodeLength::Single(c) => freq[c as usize] += 1,
-            CodeLength::Repeat(c, _) => freq[c as usize] += 1
+            CodeLength::Repeat { code: c, repeat: _ } => freq[c as usize] += 1
         }
     }
 }
@@ -224,7 +238,7 @@ fn write_code_lengths(writer: &mut BitWriter, eclens: &Vec<CodeLength>, enc: &Ve
                 let (bits, bit_len) = enc[c as usize];
                 v.extend(writer.write_bits(bits, bit_len, false).iter());
             }
-            CodeLength::Repeat(l, r) => {
+            CodeLength::Repeat { code: l, repeat: r } => {
                 let (bits, bit_len) = enc[l as usize];
                 v.extend(writer.write_bits(bits, bit_len, false).iter());
                 match l {
@@ -368,47 +382,53 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
 pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<(u32, u32), Error> {
     let mut window = Vec::<u8>::new();
     let mut bytes = [0 as u8; MAXIMUM_LENGTH];
-    let mut data = Vec::<u8>::new();
+    let mut vlz = Vec::<LZ77>::new();
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
     writer.write_bits(1, 1, true);
     writer.write_bits(BlockType::DynamicHuffman as u16, 2, true);
     let mut freq = Vec::<usize>::with_capacity(NUM_LITERAL as usize);
     freq.resize(257, 0);
-    freq[256] = 1;
     let mut read_len = 0;
     loop {
         let len = input.read(&mut bytes).unwrap();
         read_len += len;
         for i in 0..len {
             freq[bytes[i] as usize] += 1;
+            vlz.push(LZ77::Literal(bytes[i] as u16));
         }
 
         if len == 0 {
             break;
         }
-        data.extend(&bytes[0..len]);
     }
+    vlz.push(LZ77::Literal(256));
+    freq[256] += 1;
     debug!("read len {}", read_len);
-    let code_len = assign_lengths(&freq);
+    let lit_clens = assign_lengths(&freq);
     debug!("window {:?}", window);
 
     let mut dist_clens = Vec::new();
     dist_clens.push(0);
-    let v = write_code_table(&mut writer, &code_len, &dist_clens);
-    window.extend(v.iter());
+    window.extend(write_code_table(&mut writer, &lit_clens, &dist_clens).iter());
     debug!("window {:?}", window);
-    let enc = gen_huffman_enc(&code_len);
-    for b in data {
-        let (bits, bits_len) = enc[b as usize];
-        debug!("byte {:02x}->{} {}", b, bits, bits_len);
+    let lenc = gen_huffman_enc(&lit_clens);
+    let denc = gen_huffman_enc(&dist_clens);
+    let mut vhuff = Vec::new();
+    for b in vlz {
+        match b {
+            LZ77::Literal(l) => vhuff.push(lenc[l as usize]),
+            LZ77::Copy{len: l, dist: d} => {
+                vhuff.push(lenc[l as usize]);
+                vhuff.push(denc[d as usize]);
+            }
+        }
+    }
+    for (bits, bits_len) in vhuff {
         let v = writer.write_bits(bits, bits_len, false);
         window.extend(v.iter());
         //debug!("window {:?}", window);
     }
-    let (bits, bits_len) = enc[256];//end
-    let v = writer.write_bits(bits, bits_len, false);
-    window.extend(v.iter());
     writer.flush().map(|c| { window.push(c); });
     debug!("window {:?}", window);
     try!(output.write(&window[0..window.len()]));
@@ -470,7 +490,7 @@ mod test {
         for cl in clens {
             match cl {
                 CodeLength::Single(c) => d.push(c),
-                CodeLength::Repeat(l, r) => {
+                CodeLength::Repeat { code: l, repeat: r } => {
                     if l == 16 {
                         let c = d.pop().unwrap();
                         d.push(c);
