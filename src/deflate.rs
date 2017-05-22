@@ -8,6 +8,7 @@ use bitstream::*;
 use huffman::*;
 use util::*;
 
+const END_OF_BLOCK: u16 = 256;
 const NUM_LITERAL: u16 = 288;
 const MAXIMUM_DISTANCE: usize = 32 * 1024;
 const MAXIMUM_LENGTH: usize = 258;
@@ -64,7 +65,7 @@ fn read_distance<R: Read>(dist_code: u16, reader: &mut BitReader<R>) -> Result<u
     Ok(distance + 1)
 }
 
-fn read_codelens<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, n: usize) -> Result<Vec<u8>, Error> {
+fn read_code_lengths<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, n: usize) -> Result<Vec<u8>, Error> {
     debug!("To read {} code lengths", n);
     let mut lens = Vec::<u8>::with_capacity(n);
     lens.resize(n, 0);
@@ -118,8 +119,8 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
         hclen_len[HCLEN_ORDER[i]] = try!(reader.read_bits(3, true)) as u8;
     }
     let clen_dec = gen_huffman_dec(&hclen_len, max_hclen as u16);
-    let hlit_len = try!(read_codelens(reader, &clen_dec, hlit));
-    let hdist_len = try!(read_codelens(reader, &clen_dec, hdist));
+    let hlit_len = try!(read_code_lengths(reader, &clen_dec, hlit));
+    let hdist_len = try!(read_code_lengths(reader, &clen_dec, hdist));
     debug!("Read code table done");
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
 }
@@ -325,7 +326,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 debug!("lit {}: {:02x}", decompressed_size, lit);
                 decompressed_size += 1;
             }
-            256 => {
+            END_OF_BLOCK => {
                 debug!("end of block");
                 break;
             }
@@ -402,8 +403,8 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
             break;
         }
     }
-    vlz.push(LZ77::Literal(256));
-    freq[256] += 1;
+    vlz.push(LZ77::Literal(END_OF_BLOCK));
+    freq[END_OF_BLOCK as usize] += 1;
     debug!("read len {}", read_len);
     let lit_clens = assign_lengths(&freq);
     debug!("window {:?}", window);
@@ -553,7 +554,7 @@ mod test {
         debug!("{:?}", hclen_len);
         let clen_dec = gen_huffman_dec(&hclen_len, max_hclen as u16);
         debug!("{:?}", clen_dec);
-        let hlit_len = read_codelens(&mut reader, &clen_dec, len).unwrap();
+        let hlit_len = read_code_lengths(&mut reader, &clen_dec, len).unwrap();
         assert_eq!(v.len(), hlit_len.len());
         assert_eq!(v, hlit_len);
     }
