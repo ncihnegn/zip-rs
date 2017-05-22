@@ -30,7 +30,7 @@ fn reverse(a: Bits, n: u8) -> Bits {
     }
     // swap bytes
     v = ((v >> 8) & 0x00FF) | ((v & 0x00FF) << 8);
-    return v >> (16 - n);
+    v >> (16 - n)
 }
 
 impl<'a, R: Read> BitReader<'a, R> {

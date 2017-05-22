@@ -71,7 +71,7 @@ impl HuffmanEnc {
         for s in 256..280 {
             lit_lens[s] = 7;
         }
-        return gen_huffman_enc(&lit_lens);
+        gen_huffman_enc(&lit_lens)
     }
 }
 
