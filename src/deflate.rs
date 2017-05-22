@@ -56,12 +56,13 @@ fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> Result<u16, Erro
 
 fn read_distance<R: Read>(dist_code: u16, reader: &mut BitReader<R>) -> Result<u16, Error> {
     assert!(dist_code < 30);
-    let mut distance = dist_code;
-    if dist_code > 3 {
+    let distance = if dist_code > 3 {
         let extra_bits = (dist_code - 2) / 2;
         let extra = try!(reader.read_bits(extra_bits as u8, true));
-        distance = (1 << extra_bits) * (2 + (dist_code % 2)) + extra;
-    }
+        (1 << extra_bits) * (2 + (dist_code % 2)) + extra
+    } else {
+        dist_code
+    };
     Ok(distance + 1)
 }
 
@@ -71,7 +72,7 @@ fn read_code_lengths<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, 
     lens.resize(n, 0);
     let mut index = 0;
     while index < n {
-        let s = try!(read_code(reader, &clen_dec)) as u8;
+        let s = try!(read_code(reader, clen_dec)) as u8;
         let mut count = 0;
         let mut len: u8 = 0;
         debug!("code len {}", s);
@@ -115,8 +116,8 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     let mut hclen_len = Vec::<u8>::with_capacity(max_hclen);
     hclen_len.resize(max_hclen, 0);
     assert!(hlit <= 286 && hclen <= max_hclen && hdist <= 32);
-    for i in 0..hclen {
-        hclen_len[HCLEN_ORDER[i]] = try!(reader.read_bits(3, true)) as u8;
+    for i in HCLEN_ORDER.iter().take(hclen) {
+        hclen_len[*i] = try!(reader.read_bits(3, true)) as u8;
     }
     let clen_dec = gen_huffman_dec(&hclen_len, max_hclen as u16);
     let hlit_len = try!(read_code_lengths(reader, &clen_dec, hlit));
@@ -125,7 +126,7 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
 }
 
-fn encode_code_lengths(clen: &Vec<u8>) -> Vec<CodeLength> {
+fn encode_code_lengths(clen: &[u8]) -> Vec<CodeLength> {
     let mut v = Vec::<CodeLength>::new();
     let len = clen.len();
     if len == 0 {
@@ -134,16 +135,16 @@ fn encode_code_lengths(clen: &Vec<u8>) -> Vec<CodeLength> {
     }
     let mut repeat = 0;
     let mut prev = 0;//implicitly add one for repeat zeros
-    for i in 0..len {
-        let cur = clen[i];
-        let mut cur_dump = true;
-        if cur == prev && (repeat < 6 || cur == 0) && repeat < 138 {
+    for (i, cur) in clen.iter().enumerate().take(len) {
+        let cur_dump = if *cur == prev && (repeat < 6 || *cur == 0) && repeat < 138 {
             repeat += 1;
             if i != len-1 {
                 continue;
             }
-            cur_dump = false;
-        }
+            false
+        } else {
+            true
+        };
         match repeat {
             0 => {
                 if i > 0 {
@@ -171,28 +172,27 @@ fn encode_code_lengths(clen: &Vec<u8>) -> Vec<CodeLength> {
             _ => panic!("Illegal repeat"),
         }
         if cur_dump && i == len-1 {
-            v.push(CodeLength::Single(cur));
+            v.push(CodeLength::Single(*cur));
         }
-        if cur != 0 {
+        if *cur != 0 {
             repeat = 0;
         } else {
             repeat = 1;
         }
-        prev = cur;
+        prev = *cur;
     }
-    return v;
+    v
 }
 
-fn update_freq(freq: &mut Vec<usize>, eclens: &Vec<CodeLength>) {
+fn update_freq(freq: &mut Vec<usize>, eclens: &[CodeLength]) {
     for cl in eclens.iter() {
         match *cl {
-            CodeLength::Single(c) => freq[c as usize] += 1,
-            CodeLength::Repeat { code: c, repeat: _ } => freq[c as usize] += 1
+            CodeLength::Single(c) | CodeLength::Repeat { code: c, .. } => freq[c as usize] += 1
         }
     }
 }
 
-fn reordered_code_lengths(clens: &Vec<u8>) -> Vec<u8> {
+fn reordered_code_lengths(clens: &[u8]) -> Vec<u8> {
     let mut mapped_clens = Vec::with_capacity(HCLEN_ORDER.len());
     mapped_clens.resize(HCLEN_ORDER.len(), 0);
     for i in 0..clens.len() {
@@ -204,13 +204,13 @@ fn reordered_code_lengths(clens: &Vec<u8>) -> Vec<u8> {
     mapped_clens
 }
 
-fn write_code_table(writer: &mut BitWriter, lit_clens: &Vec<u8>, dist_clens: &Vec<u8>) -> Vec<u8> {
+fn write_code_table(writer: &mut BitWriter, lit_clens: &[u8], dist_clens: &[u8]) -> Vec<u8> {
     let hlit = lit_clens.len() - 257;
     let mut v = writer.write_bits(hlit as u16, 5, true);
     let hdist = dist_clens.len()-1;
     v.extend(writer.write_bits(hdist as u16, 5, true).iter());
-    let lit_eclens = encode_code_lengths(&lit_clens);
-    let dist_eclens = encode_code_lengths(&dist_clens);
+    let lit_eclens = encode_code_lengths(lit_clens);
+    let dist_eclens = encode_code_lengths(dist_clens);
     let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
     freq.resize(HCLEN_ORDER.len(), 0);
     update_freq(&mut freq, &lit_eclens);
@@ -228,10 +228,10 @@ fn write_code_table(writer: &mut BitWriter, lit_clens: &Vec<u8>, dist_clens: &Ve
     debug!("Write lit code lengths");
     v.extend(write_code_lengths(writer, &lit_eclens, &enc).iter());
     v.extend(write_code_lengths(writer, &dist_eclens, &enc).iter());
-    return v;
+    v
 }
 
-fn write_code_lengths(writer: &mut BitWriter, eclens: &Vec<CodeLength>, enc: &Vec<(Bits, u8)>) -> Vec<u8> {
+fn write_code_lengths(writer: &mut BitWriter, eclens: &[CodeLength], enc: &[(Bits, u8)]) -> Vec<u8> {
     let mut v = Vec::new();
     for cl in eclens {
         match *cl {
@@ -251,7 +251,7 @@ fn write_code_lengths(writer: &mut BitWriter, eclens: &Vec<CodeLength>, enc: &Ve
             }
         };
     }
-    return v;
+    v
 }
 
 // Not being used
