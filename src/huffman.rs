@@ -184,14 +184,14 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
         bits <<= e;
         first <<= e;
         bits |= try!(reader.read_bits(e, false));
-        let count = dec.count[b];
+        let ct = dec.count[b];
         debug!("bits: {}", bits);
-        if bits >= first && bits < first + count {
+        if bits >= first && bits < first + ct {
             assert!(index + bits - first < dec.symbol.len() as u16);
             return Ok(dec.symbol[(index + bits - first) as usize]);
         }
-        index += count;
-        first += count;
+        index += ct;
+        first += ct;
     }
     Err(Error::new(ErrorKind::Other, "Illegal Huffman code"))
 }
