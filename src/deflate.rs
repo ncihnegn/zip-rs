@@ -98,8 +98,8 @@ fn read_code_lengths<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, 
         }
         if s > 15 && s < 19 {
             assert!(index + count as usize <= n);
-            for i in 0..count {
-                lens[index + i as usize] = len;
+            for l in lens.iter_mut().skip(index).take(count as usize) {
+                *l = len;
             }
             index += count as usize;
         }
@@ -195,8 +195,8 @@ fn update_freq(freq: &mut Vec<usize>, eclens: &[CodeLength]) {
 fn reordered_code_lengths(clens: &[u8]) -> Vec<u8> {
     let mut mapped_clens = Vec::with_capacity(HCLEN_ORDER.len());
     mapped_clens.resize(HCLEN_ORDER.len(), 0);
-    for i in 0..clens.len() {
-        mapped_clens[i] = clens[HCLEN_ORDER[i]];
+    for (i, o) in HCLEN_ORDER.iter().enumerate().take(clens.len()) {
+        mapped_clens[i] = clens[*o as usize];
     }
     while mapped_clens.len() > 4 && *(mapped_clens.last().unwrap()) == 0 {
         let _ = mapped_clens.pop();
@@ -220,9 +220,9 @@ fn write_code_table(writer: &mut BitWriter, lit_clens: &[u8], dist_clens: &[u8])
     let hclen = mapped_clens.len();
     v.extend(writer.write_bits((hclen - 4) as u16, 4, true).iter());
     debug!("Write clen codes");
-    for i in 0..hclen {
-        v.extend(writer.write_bits(mapped_clens[i] as u16, 3, true).iter());
-        debug!("{}->{}", HCLEN_ORDER[i], mapped_clens[i]);
+    for i in mapped_clens {
+        v.extend(writer.write_bits(i as u16, 3, true).iter());
+        //debug!("{}->{}", HCLEN_ORDER[i], mapped_clens[i]);
     }
     let enc = gen_huffman_enc(&clen);
     debug!("Write lit code lengths");

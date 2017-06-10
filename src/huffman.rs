@@ -80,9 +80,9 @@ pub fn assign_lengths(v: &Vec<usize>) -> Vec<u8> {
     const NONLEAF: u16 = u16::MAX;
     let mut heap = BinaryHeap::new();
     // Build a min-heap
-    for c in 0..v.len() {
-        if v[c] > 0 {
-            heap.push(Char { val: c as u16, freq: v[c], left: None, right: None});
+    for (c, f) in v.iter().enumerate() {
+        if *f > 0 {
+            heap.push(Char { val: c as u16, freq: *f, left: None, right: None});
         }
     }
     while heap.len() > 1 {
@@ -124,17 +124,17 @@ pub fn gen_huffman_enc(v: &Vec<u8>) -> Vec<(Bits, u8)> {
     next_code.resize(max_bits+1, 0);
     let mut code: Bits = 0;
     bl_count[0] = 0;
-    for bits in 1..max_bits+1 {
-        code = (code + bl_count[bits-1]) << 1;
-        next_code[bits] = code;
+    for (bits, bl) in bl_count.iter().enumerate().take(max_bits) {
+        code = (code + bl) << 1;
+        next_code[bits+1] = code;
     }
     let max_code = v.len()-1;
     let mut enc = Vec::<(Bits, u8)>::new();
     enc.resize(max_code+1, (0, 0));
-    for n in 0..max_code+1 {
-        let len = v[n] as usize;
+    for (n, l) in v.iter().enumerate().take(max_code+1) {
+        let len = *l as usize;
         if len != 0 {
-            enc[n] = (next_code[len], v[n]);
+            enc[n] = (next_code[len], *l);
             next_code[len] += 1;
         }
     }
@@ -153,16 +153,16 @@ pub fn gen_huffman_dec(lengths: &Vec<u8>, n: u16) -> HuffmanDec {
     }
     let mut offsets: Vec<u16> = Vec::new();
     offsets.resize(max_bits+1, 0);
-    for i in 1..max_bits {
-        offsets[i+1] = offsets[i] + count[i];
+    for (i, c) in count.iter().enumerate().take(max_bits).skip(1) {
+        offsets[i+1] = offsets[i] + *c;
     }
     //let n = offsets[max_bits+1];//total number of symbols
     let mut symbol: Vec<u16> = Vec::new();
     symbol.resize(n as usize, 0);
-    for sym in 0..n {
-        let len = lengths[sym as usize] as usize;
+    for (sym, l) in lengths.iter().enumerate().take(n as usize) {
+        let len = *l as usize;
         if len > 0 {
-            symbol[offsets[len] as usize] = sym;
+            symbol[offsets[len] as usize] = sym as u16;
             offsets[len] += 1;
         }
     }
