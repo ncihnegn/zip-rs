@@ -8,7 +8,7 @@ pub struct BitReader<'a, R: Read + 'a> {
     acc: u32,
 }
 
-fn reverse(a: Bits, n: u8) -> Bits {
+pub fn reverse(a: Bits, n: u8) -> Bits {
     let mut v = a;
     if n == 1 {
         return v;
@@ -69,11 +69,10 @@ impl BitWriter {
         BitWriter { bits: 0, acc: 0 }
     }
 
-    //order: true for LSB and false for MSB (Huffman codes)
-    pub fn write_bits(&mut self, b: Bits, n: u8, order: bool) -> Vec<u8> {
+    pub fn write_bits(&mut self, b: Bits, n: u8) -> Vec<u8> {
         assert!(n <= 16);
         assert!(b <= 1 << n);
-        let c = if order { b } else { reverse(b, n) };
+        let c = b;//if order { b } else { reverse(b, n) };
         self.acc |= (c as u32) << self. bits;
         self.bits += n;
         let nb = self.bits / 8;
@@ -115,17 +114,17 @@ mod test {
     #[test]
     fn basics() {
         let mut writer = BitWriter::new();
-        let mut vec = writer.write_bits(0x5A5A, 15, false);
+        let mut vec = writer.write_bits(0x5A5A, 15);
         assert!(vec.len() == 1);
-        vec.extend(writer.write_bits(0x3AA5, 15, true).iter());
+        vec.extend(writer.write_bits(0x3AA5, 15).iter());
         assert!(vec.len() == 3);
         writer.flush().map(|c| { vec.push(c); });
         assert!(vec.len() == 4);
         let mut input = BufReader::new(Cursor::new(vec));
         let mut reader = BitReader::new(&mut input);
         let first = reader.read_bits(15, false).unwrap();
-        assert!(first == 0x5A5A);
+        assert_eq!(first, 0x2D2D);
         let second = reader.read_bits(15, true).unwrap();
-        assert!(second == 0x3AA5);
+        assert_eq!(second, 0x3AA5);
     }
 }

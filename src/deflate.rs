@@ -206,9 +206,9 @@ fn reordered_code_lengths(clens: &[u8]) -> Vec<u8> {
 
 fn write_code_table(writer: &mut BitWriter, lit_clens: &[u8], dist_clens: &[u8]) -> Vec<u8> {
     let hlit = lit_clens.len() - 257;
-    let mut v = writer.write_bits(hlit as u16, 5, true);
+    let mut v = writer.write_bits(hlit as u16, 5);
     let hdist = dist_clens.len()-1;
-    v.extend(writer.write_bits(hdist as u16, 5, true).iter());
+    v.extend(writer.write_bits(hdist as u16, 5).iter());
     let lit_eclens = encode_code_lengths(lit_clens);
     let dist_eclens = encode_code_lengths(dist_clens);
     let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
@@ -218,10 +218,10 @@ fn write_code_table(writer: &mut BitWriter, lit_clens: &[u8], dist_clens: &[u8])
     let clen = assign_lengths(&freq);
     let mapped_clens = reordered_code_lengths(&clen);
     let hclen = mapped_clens.len();
-    v.extend(writer.write_bits((hclen - 4) as u16, 4, true).iter());
+    v.extend(writer.write_bits((hclen - 4) as u16, 4).iter());
     debug!("Write clen codes");
     for i in mapped_clens {
-        v.extend(writer.write_bits(i as u16, 3, true).iter());
+        v.extend(writer.write_bits(i as u16, 3).iter());
         //debug!("{}->{}", HCLEN_ORDER[i], mapped_clens[i]);
     }
     let enc = gen_huffman_enc(&clen);
@@ -237,15 +237,15 @@ fn write_code_lengths(writer: &mut BitWriter, eclens: &[CodeLength], enc: &[(Bit
         match *cl {
             CodeLength::Single(c) => {
                 let (bits, bit_len) = enc[c as usize];
-                v.extend(writer.write_bits(bits, bit_len, false).iter());
+                v.extend(writer.write_bits(bits, bit_len).iter());
             }
             CodeLength::Repeat { code: l, repeat: r } => {
                 let (bits, bit_len) = enc[l as usize];
-                v.extend(writer.write_bits(bits, bit_len, false).iter());
+                v.extend(writer.write_bits(bits, bit_len).iter());
                 match l {
-                    16 => v.extend(writer.write_bits(r as u16, 2, true)),
-                    17 => v.extend(writer.write_bits(r as u16, 3, true)),
-                    18 => v.extend(writer.write_bits(r as u16, 7, true)),
+                    16 => v.extend(writer.write_bits(r as u16, 2)),
+                    17 => v.extend(writer.write_bits(r as u16, 3)),
+                    18 => v.extend(writer.write_bits(r as u16, 7)),
                     _ => panic!("Illegal code length Huffman code")
                 }
             }
@@ -386,8 +386,8 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     let mut vlz = Vec::<LZ77>::new();
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
-    writer.write_bits(1, 1, true);
-    writer.write_bits(BlockType::DynamicHuffman as u16, 2, true);
+    writer.write_bits(1, 1);
+    writer.write_bits(BlockType::DynamicHuffman as u16, 2);
     let mut freq = Vec::<usize>::with_capacity(NUM_LITERAL as usize);
     freq.resize(257, 0);
     let mut read_len = 0;
@@ -426,7 +426,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         }
     }
     for (bits, bits_len) in vhuff {
-        let v = writer.write_bits(bits, bits_len, false);
+        let v = writer.write_bits(bits, bits_len);
         window.extend(v.iter());
         //debug!("window {:?}", window);
     }
@@ -531,10 +531,10 @@ mod test {
         let mut writer = BitWriter::new();
         let mut encoded = Vec::new();
         {
-            encoded.extend(writer.write_bits(hclen as u16 -4, 4, true).iter());
+            encoded.extend(writer.write_bits(hclen as u16 -4, 4).iter());
             debug!("{:?}", clens);
             for i in 0..hclen {
-                encoded.extend(writer.write_bits(mapped_clens[i] as u16, 3, true).iter());
+                encoded.extend(writer.write_bits(mapped_clens[i] as u16, 3).iter());
                 debug!("{}->{}", HCLEN_ORDER[i], mapped_clens[i]);
             }
             let enc = gen_huffman_enc(&clens);

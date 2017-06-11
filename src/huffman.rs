@@ -134,7 +134,7 @@ pub fn gen_huffman_enc(v: &Vec<u8>) -> Vec<(Bits, u8)> {
     for (n, l) in v.iter().enumerate().take(max_code+1) {
         let len = *l as usize;
         if len != 0 {
-            enc[n] = (next_code[len], *l);
+            enc[n] = (reverse(next_code[len], *l), *l);
             next_code[len] += 1;
         }
     }
@@ -203,29 +203,29 @@ mod test {
     #[test]
     fn fixed_huffman_literal() {
         let ref enc = FIXED_LITERAL_ENC;
-        assert!(enc[0].0 == 0b00110000);
-        assert!(enc[144].0 == 0b110010000);
-        assert!(enc[256].0 == 0b0000000);
-        assert!(enc[280].0 == 0b11000000);
+        assert_eq!(enc[0].0, reverse(0b00110000, 8));
+        assert_eq!(enc[144].0, reverse(0b110010000, 9));
+        assert_eq!(enc[256].0, reverse(0b0000000, 7));
+        assert_eq!(enc[280].0, reverse(0b11000000, 8));
         let ref dec = FIXED_LITERAL_DEC;
-        assert!(dec.count[7] == 24);
-        assert!(dec.count[8] == 152);
-        assert!(dec.count[9] == 112);
-        assert!(dec.symbol[0] == 256);
-        assert!(dec.symbol[24] == 0);
-        assert!(dec.symbol[176] == 144);
+        assert_eq!(dec.count[7], 24);
+        assert_eq!(dec.count[8], 152);
+        assert_eq!(dec.count[9], 112);
+        assert_eq!(dec.symbol[0], 256);
+        assert_eq!(dec.symbol[24], 0);
+        assert_eq!(dec.symbol[176], 144);
     }
 
     #[test]
     fn dynamic_huffman_codelen() {
         let code_lens = vec![2, 6, 6, 4, 5, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 0];
         let enc = gen_huffman_enc(&code_lens);
-        assert!(enc[0].0 == 0b00);
-        assert!(enc[1].0 == 62);
-        assert!(enc[3].0 == 12);
-        assert!(enc[4].0 == 30);
-        assert!(enc[5].0 == 1);
-        assert!(enc[17].0 == 13);
+        assert_eq!(enc[0].0, 0b00);
+        assert_eq!(enc[1].0, reverse(62, code_lens[1]));
+        assert_eq!(enc[3].0, reverse(12, code_lens[3]));
+        assert_eq!(enc[4].0, reverse(30, code_lens[4]));
+        assert_eq!(enc[5].0, reverse(1, code_lens[5]));
+        assert_eq!(enc[17].0, reverse(13, code_lens[17]));
     }
 
     #[test]
