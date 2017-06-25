@@ -59,6 +59,7 @@ impl<'a, R: Read> BitReader<'a, R> {
     }
 }
 
+#[derive(Default)]
 pub struct BitWriter {
     bits: u8,
     acc: u32

@@ -316,9 +316,10 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 let byte = lit as u8;
                 debug!("byte {}", byte);
                 if window.len() == MAXIMUM_DISTANCE {
-                    let b: [u8; 1] = [window.remove(0); 1];
+                    let mut b: [u8; 1] = [0; 1];
+                    b[0] = window.remove(0);
                     debug!("write");
-                    try!(output.write(&b));
+                    let _ = try!(output.write(&b));
                     debug!("hasher");
                     hasher.write(&b);
                 }
@@ -346,15 +347,12 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 assert!(dist <= window.len());
                 if window.len() + len > window.capacity() {
                     let to_write = window.len() + len - window.capacity();
-                    try!(output.write(&window[0..to_write]));
+                    let _ = try!(output.write(&window[0..to_write]));
                     hasher.write(&window[0..to_write]);
                     window.drain(0..to_write);
                 }
                 //Fix the case len > dist
-                let mut cur_len = len;
-                if len > dist {
-                    cur_len = dist;
-                }
+                let mut cur_len = if len > dist { dist } else { len };
                 let mut copied = 0;
                 let first = window.len() - dist;
                 let mut seg = Vec::from_iter(window[first..first + cur_len]
@@ -375,7 +373,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
             }
         }
     }
-    try!(output.write(window.as_slice()));
+    let _ = try!(output.write(window.as_slice()));
     hasher.write(window.as_slice());
     Ok((decompressed_size, hasher.sum32()))
 }
@@ -432,7 +430,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     }
     writer.flush().map(|c| { window.push(c); });
     debug!("window {:?}", window);
-    try!(output.write(&window[0..window.len()]));
+    try!(output.write_all(&window));
     hasher.write(&window[0..window.len()]);
     let compressed_size = window.len() as u32;
     debug!("compressed size: {}", compressed_size);

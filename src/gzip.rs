@@ -95,11 +95,11 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
     let _ = reader.seek(SeekFrom::Start(0));
     while reader.seek(SeekFrom::Current(0)).unwrap() != end {
         try!(reader.read_exact(&mut byte));
-        assert!(byte[0] == 0x1F);
+        assert_eq!(byte[0], 0x1F);
         try!(reader.read_exact(&mut byte));
-        assert!(byte[0] == 0x8B);
+        assert_eq!(byte[0], 0x8B);
         try!(reader.read_exact(&mut byte));
-        assert!(byte[0] == 8);//Deflate Only
+        assert_eq!(byte[0], 8);//Deflate Only
         try!(reader.read_exact(&mut byte));
         let mut flg = Flags { ftext: false, fhcrc: false, fextra: false, fname: false, fcomment: false };
         if byte[0] & 1 == 1 {
@@ -137,21 +137,22 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
             extra.resize(xlen as usize, 0);
             try!(reader.read_exact(&mut extra as &mut [u8]));
         }
-        let mut file_name = String::from(file_name);
-        if flg.fname {
+        let file_name = if flg.fname {
             let mut v = Vec::<u8>::new();
             try!(reader.read_until(0, &mut v));
             v.pop();//Remove trailing '\0'
-            file_name = String::from_utf8(v).unwrap();
+            String::from_utf8(v).unwrap()
         } else {
-            if file_name.ends_with(".gz") {
-                let len = file_name.len() - 3;
-                file_name.truncate(len);
+            let mut tmp = String::from(file_name);
+            if tmp.ends_with(".gz") {
+                let len = tmp.len() - 3;
+                tmp.truncate(len);
             }
-            if members.len() > 0 {
-                file_name += &format!(".{}", members.len());
+            if !members.is_empty() {
+                tmp += &format!(".{}", members.len());
             }
-        }
+            tmp
+        };
         debug!("File name: {}", file_name);
         let mut file_comment = String::new();
         if flg.fcomment {
@@ -161,11 +162,9 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
             file_comment = String::from_utf8(v).unwrap();
             debug!("File comment: {}", file_comment);
         }
-        let mut crc16: u16 = 0;
-        if flg.fhcrc {
+        let crc16: u16 = if flg.fhcrc {
             try!(reader.read_exact(&mut word));
-            crc16 = trans16(word);
-        }
+            trans16(word) } else { 0 };
         let offset = reader.seek(SeekFrom::Current(0)).unwrap();
         let out = Vec::<u8>::new();
         let mut writer = BufWriter::new(out);

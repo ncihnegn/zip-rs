@@ -34,7 +34,7 @@ impl PartialOrd for Char {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct HuffmanDec {
     count: Vec<u16>,
     symbol: Vec<u16>,
@@ -76,7 +76,7 @@ impl HuffmanEnc {
 }
 
 /// Assign lengths based on frequencies
-pub fn assign_lengths(v: &Vec<usize>) -> Vec<u8> {
+pub fn assign_lengths(v: &[usize]) -> Vec<u8> {
     const NONLEAF: u16 = u16::MAX;
     let mut heap = BinaryHeap::new();
     // Build a min-heap
@@ -113,9 +113,9 @@ pub fn assign_lengths(v: &Vec<usize>) -> Vec<u8> {
 }
 
 /// Generate a canonical Huffman encoding table with lengths
-pub fn gen_huffman_enc(v: &Vec<u8>) -> Vec<(Bits, u8)> {
+pub fn gen_huffman_enc(v: &[u8]) -> Vec<(Bits, u8)> {
     let mut bl_count = Vec::<Bits>::new();
-    let max_bits = v.iter().max().unwrap().clone() as usize;
+    let max_bits = *v.iter().max().unwrap() as usize;
     bl_count.resize(max_bits+1, 0);
     for i in v {
         bl_count[*i as usize] += 1;
@@ -141,9 +141,9 @@ pub fn gen_huffman_enc(v: &Vec<u8>) -> Vec<(Bits, u8)> {
     enc
 }
 
-pub fn gen_huffman_dec(lengths: &Vec<u8>, n: u16) -> HuffmanDec {
+pub fn gen_huffman_dec(lengths: &[u8], n: u16) -> HuffmanDec {
     let mut count: Vec<u16> = Vec::new();
-    let max_bits = lengths.iter().max().unwrap().clone() as usize;
+    let max_bits = *lengths.iter().max().unwrap() as usize;
     assert!(max_bits <= MAXBITS);
     count.resize(max_bits+1, 0);
     for i in lengths {

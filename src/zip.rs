@@ -192,7 +192,7 @@ impl CompOption {
             CompMethod::Implode => Some(CompOption::Implode{
                 dictionary_size: a & 2 == 2, trees: a & 1 == 1 }),
             CompMethod::Deflate | CompMethod::Deflate64 =>
-                DeflateOption::from_u8(a).map(|x| CompOption::Deflate(x)),
+                DeflateOption::from_u8(a).map(CompOption::Deflate),
             CompMethod::LZMA => Some(
                 CompOption::LZMA(a & 1 == 1)),
             _ => None
@@ -311,7 +311,7 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
         None => return Err(Error::new(ErrorKind::Other, "Bad version in LFH"))
     };
     let _ = reader.read_exact(&mut word);
-    let tmp = word.clone();
+    let tmp = word;
     let _ = reader.read_exact(&mut word);
     let method = match CompMethod::from_u16(trans16(word)) {
         Some(x) => x,
@@ -471,7 +471,7 @@ pub fn extract(file_name: &str, lfh: &LocalFileHeader) -> Result<(), Error> {
                     out.resize(to_copy, 0);
                 }
                 try!(reader.read_exact(&mut out));
-                try!(writer.write(&out));
+                try!(writer.write_all(&out));
                 copied += out.len() as u32;
                 hasher.write(&out);
             }
