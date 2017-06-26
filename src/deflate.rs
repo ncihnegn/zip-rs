@@ -317,7 +317,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 debug!("byte {}", byte);
                 if window.len() == MAXIMUM_DISTANCE {
                     let mut b: [u8; 1] = [0; 1];
-                    b[0] = window.remove(0);
+                    b[0] = window.remove(0);//workaround clippy bug
                     debug!("write");
                     let _ = try!(output.write(&b));
                     debug!("hasher");
