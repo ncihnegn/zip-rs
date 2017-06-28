@@ -59,8 +59,9 @@ impl HuffmanDec {
 }
 
 pub struct HuffmanEnc {
-    
+
 }
+
 impl HuffmanEnc {
     pub fn fixed_literal_enc() -> Vec<(Bits, u8)> {
         let mut lit_lens = Vec::<u8>::with_capacity(MAXLITERAL as usize + 1);
