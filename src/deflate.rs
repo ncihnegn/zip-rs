@@ -392,9 +392,9 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     loop {
         let len = input.read(&mut bytes).unwrap();
         read_len += len;
-        for i in 0..len {
-            freq[bytes[i] as usize] += 1;
-            vlz.push(LZ77::Literal(bytes[i] as u16));
+        for b in bytes.iter().take(len) {
+            freq[*b as usize] += 1;
+            vlz.push(LZ77::Literal(*b as u16));
         }
 
         if len == 0 {
