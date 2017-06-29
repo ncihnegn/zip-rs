@@ -9,9 +9,12 @@ use huffman::*;
 use util::*;
 
 const END_OF_BLOCK: u16 = 256;
-const NUM_LITERAL: u16 = 288;
+const MAXIMUM_NUMBER_LITERAL: usize = 286;
+const MINIMUM_NUMBER_LITERAL: usize = 257;
 const MAXIMUM_DISTANCE: usize = 32 * 1024;
+const MAXIMUM_NUMBER_DISTANCE_CODE: usize = 30;
 const MAXIMUM_LENGTH: usize = 258;
+//const MINIMUM_LENGTH: usize = 3;
 const HCLEN_ORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
 #[repr(u16)]
@@ -115,7 +118,7 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     let max_hclen = HCLEN_ORDER.len();
     let mut hclen_len = Vec::<u8>::with_capacity(max_hclen);
     hclen_len.resize(max_hclen, 0);
-    assert!(hlit <= 286 && hclen <= max_hclen && hdist <= 32);
+    assert!(hlit <= MAXIMUM_NUMBER_LITERAL && hclen <= max_hclen && hdist <= MAXIMUM_NUMBER_DISTANCE_CODE);
     for i in HCLEN_ORDER.iter().take(hclen) {
         hclen_len[*i] = try!(reader.read_bits(3, true)) as u8;
     }
@@ -205,7 +208,7 @@ fn reordered_code_lengths(clens: &[u8]) -> Vec<u8> {
 }
 
 fn write_code_table(writer: &mut BitWriter, lit_clens: &[u8], dist_clens: &[u8]) -> Vec<u8> {
-    let hlit = lit_clens.len() - 257;
+    let hlit = lit_clens.len() - MINIMUM_NUMBER_LITERAL;
     let mut v = writer.write_bits(hlit as u16, 5);
     let hdist = dist_clens.len()-1;
     v.extend(writer.write_bits(hdist as u16, 5).iter());
@@ -331,7 +334,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 debug!("end of block");
                 break;
             }
-            257...285 => {
+            MINIMUM_NUMBER_LITERAL...(MAXIMUM_NUMBER_LITERAL-1) => {
                 let len = try!(read_length(lit, &mut reader)) as usize;
                 assert!(len <= MAXIMUM_LENGTH);
 
@@ -386,8 +389,8 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     let mut writer = BitWriter::new();
     writer.write_bits(1, 1);
     writer.write_bits(BlockType::DynamicHuffman as u16, 2);
-    let mut freq = Vec::<usize>::with_capacity(NUM_LITERAL as usize);
-    freq.resize(257, 0);
+    let mut freq = Vec::<usize>::with_capacity(MAXIMUM_NUMBER_LITERAL);
+    freq.resize(MINIMUM_NUMBER_LITERAL as usize, 0);
     let mut read_len = 0;
     loop {
         let len = input.read(&mut bytes).unwrap();
