@@ -358,7 +358,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 let mut cur_len = if len > dist { dist } else { len };
                 let mut copied = 0;
                 let first = window.len() - dist;
-                let mut seg = Vec::from_iter(window[first..first + cur_len]
+                let seg = Vec::from_iter(window[first..first + cur_len]
                                              .iter().cloned());
                 while copied + cur_len <= len {
                     window.extend_from_slice(&seg);
@@ -366,8 +366,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 }
                 if copied < len {
                     cur_len = len - copied;
-                    seg.resize(cur_len, 0);
-                    window.extend_from_slice(&seg);
+                    window.extend_from_slice(&seg[0..cur_len]);
                 }
                 decompressed_size += len as u32;
             }
