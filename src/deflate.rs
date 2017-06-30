@@ -334,7 +334,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 debug!("end of block");
                 break;
             }
-            MINIMUM_NUMBER_LITERAL...(MAXIMUM_NUMBER_LITERAL-1) => {
+            257...285 => {
                 let len = try!(read_length(lit, &mut reader)) as usize;
                 assert!(len <= MAXIMUM_LENGTH);
 
@@ -358,7 +358,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 let mut cur_len = if len > dist { dist } else { len };
                 let mut copied = 0;
                 let first = window.len() - dist;
-                let seg = Vec::from_iter(window[first..first + cur_len]
+                let mut seg = Vec::from_iter(window[first..first + cur_len]
                                              .iter().cloned());
                 while copied + cur_len <= len {
                     window.extend_from_slice(&seg);
@@ -366,7 +366,8 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 }
                 if copied < len {
                     cur_len = len - copied;
-                    window.extend_from_slice(&seg[0..cur_len]);
+                    seg.resize(cur_len, 0);
+                    window.extend_from_slice(&seg);
                 }
                 decompressed_size += len as u32;
             }
