@@ -175,6 +175,7 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
     let mut bits: Bits = 0;
     let mut index = 0;
     let mut first = 0;
+    debug_assert!(dec.count.len() != 1);
     while b < dec.count.len() {
         let mut e = 1;
         b += 1;

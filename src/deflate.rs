@@ -9,12 +9,10 @@ use huffman::*;
 use util::*;
 
 const END_OF_BLOCK: u16 = 256;
-const MAXIMUM_NUMBER_LITERAL: usize = 286;
-const MINIMUM_NUMBER_LITERAL: usize = 257;
+const NUM_LITERAL: u16 = 288;
 const MAXIMUM_DISTANCE: usize = 32 * 1024;
-const MAXIMUM_NUMBER_DISTANCE_CODE: usize = 30;
 const MAXIMUM_LENGTH: usize = 258;
-//const MINIMUM_LENGTH: usize = 3;
+const MINIMUM_LENGTH: usize = 3;
 const HCLEN_ORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
 #[repr(u16)]
@@ -22,7 +20,7 @@ const HCLEN_ORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3
 enum BlockType {
     Store = 0,
     FixedHuffman = 1,
-    DynamicHuffman = 2,
+    DynamicHuffman = 2
 }
 
 #[derive(Clone, Debug)]
@@ -118,7 +116,7 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     let max_hclen = HCLEN_ORDER.len();
     let mut hclen_len = Vec::<u8>::with_capacity(max_hclen);
     hclen_len.resize(max_hclen, 0);
-    assert!(hlit <= MAXIMUM_NUMBER_LITERAL && hclen <= max_hclen && hdist <= MAXIMUM_NUMBER_DISTANCE_CODE);
+    assert!(hlit <= 286 && hclen <= max_hclen && hdist <= 32);
     for i in HCLEN_ORDER.iter().take(hclen) {
         hclen_len[*i] = try!(reader.read_bits(3, true)) as u8;
     }
@@ -167,7 +165,7 @@ fn encode_code_lengths(clen: &[u8]) -> Vec<CodeLength> {
                     v.push(CodeLength::Single(prev));
                 }
                 v.push(CodeLength::Repeat {
-                    code: if prev == 0 {17} else {16},
+                    code: if prev == 0 { 17 } else { 16 },
                     repeat: repeat - 3
                 });
             }
@@ -208,7 +206,7 @@ fn reordered_code_lengths(clens: &[u8]) -> Vec<u8> {
 }
 
 fn write_code_table(writer: &mut BitWriter, lit_clens: &[u8], dist_clens: &[u8]) -> Vec<u8> {
-    let hlit = lit_clens.len() - MINIMUM_NUMBER_LITERAL;
+    let hlit = lit_clens.len() - 257;
     let mut v = writer.write_bits(hlit as u16, 5);
     let hdist = dist_clens.len()-1;
     v.extend(writer.write_bits(hdist as u16, 5).iter());
@@ -358,7 +356,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 let mut cur_len = if len > dist { dist } else { len };
                 let mut copied = 0;
                 let first = window.len() - dist;
-                let mut seg = Vec::from_iter(window[first..first + cur_len]
+                let seg = Vec::from_iter(window[first..first + cur_len]
                                              .iter().cloned());
                 while copied + cur_len <= len {
                     window.extend_from_slice(&seg);
@@ -366,8 +364,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 }
                 if copied < len {
                     cur_len = len - copied;
-                    seg.resize(cur_len, 0);
-                    window.extend_from_slice(&seg);
+                    window.extend_from_slice(&seg[0..cur_len]);
                 }
                 decompressed_size += len as u32;
             }
@@ -387,21 +384,36 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     let mut vlz = Vec::<LZ77>::new();
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
-    writer.write_bits(1, 1);
-    writer.write_bits(BlockType::DynamicHuffman as u16, 2);
-    let mut freq = Vec::<usize>::with_capacity(MAXIMUM_NUMBER_LITERAL);
-    freq.resize(MINIMUM_NUMBER_LITERAL as usize, 0);
+    
+    let mut freq = Vec::<usize>::with_capacity(NUM_LITERAL as usize);
+    freq.resize(257, 0);
     let mut read_len = 0;
     loop {
         let len = input.read(&mut bytes).unwrap();
-        read_len += len;
-        for b in bytes.iter().take(len) {
-            freq[*b as usize] += 1;
-            vlz.push(LZ77::Literal(*b as u16));
-        }
-
         if len == 0 {
+            if read_len == 0 {
+                return Ok((0, 0)); 
+            }
             break;
+        } else if read_len == 0 {
+            writer.write_bits(1, 1);
+            writer.write_bits(BlockType::DynamicHuffman as u16, 2);
+        }
+        read_len += len;
+        if len >= MINIMUM_LENGTH {
+            for b in bytes.windows(MINIMUM_LENGTH).take(len - (MINIMUM_LENGTH-1)) {
+                freq[b[0] as usize] += 1;
+                vlz.push(LZ77::Literal(b[0] as u16));
+            }
+        }
+        /* for i in 0..min(MINIMUM_LENGTH-1, len-1) {
+            freq[bytes[len-2+i] as usize] += 1;
+            vlz.push(LZ77::Literal(bytes[len-2+i] as u16));
+        } */
+        let begin = if len >= MINIMUM_LENGTH { len - (MINIMUM_LENGTH-1) } else { 0 };
+        for i in begin..len {
+            freq[bytes[i] as usize] += 1;
+            vlz.push(LZ77::Literal(bytes[i] as u16));
         }
     }
     vlz.push(LZ77::Literal(END_OF_BLOCK));
@@ -449,11 +461,13 @@ mod test {
 
     #[test]
     fn huffman_literals() {
-        let uncompressed_len = rand::random::<u16>() as usize;
+        let mut rand_lens = [0, 1, 2, 3, 4];
+        rand_lens[4] = rand::random::<u16>() as usize;
+        let mut rng = rand::thread_rng();
+        let uncompressed_len = *(rng.choose(&rand_lens).unwrap());
         debug!("uncompressed length: {}", uncompressed_len);
         let mut uncompressed = Vec::<u8>::with_capacity(uncompressed_len);
         uncompressed.resize(uncompressed_len, 0);
-        let mut rng = rand::thread_rng();
         rng.fill_bytes(&mut uncompressed);
         debug!("uncompressed : {:?}", uncompressed);
         let mut hasher = Digest::new(IEEE);
@@ -467,12 +481,14 @@ mod test {
             debug!("compressed {} {}", compressed_len, ccrc);
             let _ = writer.flush();
         }
-        let mut reader = BufReader::new(&compressed as &[u8]);
-        let mut decompressed = Vec::<u8>::new();
-        let mut writer = BufWriter::new(&mut decompressed);
-        let (decompressed_len, dcrc) = inflate(&mut reader, &mut writer).unwrap();
-        assert_eq!(uncompressed_len, decompressed_len as usize);
-        assert_eq!(crc, dcrc);
+        if !compressed.is_empty() {
+            let mut reader = BufReader::new(&compressed as &[u8]);
+            let mut decompressed = Vec::<u8>::new();
+            let mut writer = BufWriter::new(&mut decompressed);
+            let (decompressed_len, dcrc) = inflate(&mut reader, &mut writer).unwrap();
+            assert_eq!(uncompressed_len, decompressed_len as usize);
+            assert_eq!(crc, dcrc);
+        }
     }
 
     #[test]
