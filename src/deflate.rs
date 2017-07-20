@@ -9,10 +9,11 @@ use huffman::*;
 use util::*;
 
 const END_OF_BLOCK: u16 = 256;
-const NUM_LITERAL: u16 = 288;
-const MAXIMUM_DISTANCE: usize = 32 * 1024;
-const MAXIMUM_LENGTH: usize = 258;
-const MINIMUM_LENGTH: usize = 3;
+const NUM_LIT: usize = 288;
+const MAX_DIST: usize = 32 * 1024;
+const MAX_LEN: usize = 258;
+const MIN_LEN: usize = 3;
+const NUM_DIST_CODE: u16 = 30;
 const HCLEN_ORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
 #[repr(u16)]
@@ -56,7 +57,6 @@ fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> Result<u16, Erro
 }
 
 fn read_distance<R: Read>(dist_code: u16, reader: &mut BitReader<R>) -> Result<u16, Error> {
-    assert!(dist_code < 30);
     let distance = if dist_code > 3 {
         let extra_bits = (dist_code - 2) / 2;
         let extra = try!(reader.read_bits(extra_bits as u8, true));
@@ -83,7 +83,7 @@ fn read_code_lengths<R: Read>(reader: &mut BitReader<R>, clen_dec: &HuffmanDec, 
                 index += 1;
             }
             16 => {
-                assert!(!lens.is_empty());
+                debug_assert!(!lens.is_empty());
                 len = lens[index-1];
                 count = try!(reader.read_bits(2, true)) + 3;
             }
@@ -303,7 +303,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         _ => return Err(Error::new(ErrorKind::Other, "Bad block type"))
     }
     let block_type = block_type.unwrap();
-    let mut window = Vec::<u8>::with_capacity(MAXIMUM_DISTANCE + MAXIMUM_LENGTH);
+    let mut window = Vec::<u8>::with_capacity(MAX_DIST + MAX_LEN);
     loop {
         let lit = match block_type {
             BlockType::Store => {
@@ -316,7 +316,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
             0...255 => {
                 let byte = lit as u8;
                 debug!("byte {}", byte);
-                if window.len() == MAXIMUM_DISTANCE {
+                if window.len() == MAX_DIST {
                     let mut b: [u8; 1] = [0; 1];
                     b[0] = window.remove(0);//workaround clippy bug
                     debug!("write");
@@ -334,17 +334,18 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
             }
             257...285 => {
                 let len = try!(read_length(lit, &mut reader)) as usize;
-                assert!(len <= MAXIMUM_LENGTH);
+                assert!(len <= MAX_LEN);
 
                 let dist_code = match block_type {
                     BlockType::FixedHuffman => try!(reader.read_bits(5, false)),
                     BlockType::DynamicHuffman => try!(read_code(&mut reader, &dec.1)),
                     _ => return Err(Error::new(ErrorKind::Other, "Bad block type; Shouldn't reach here"))
                 };
+                assert!(dist_code < NUM_DIST_CODE);
                 let dist = try!(read_distance(dist_code, &mut reader)) as usize;
                 debug!("{}: {}", decompressed_size, to_hex_string(&window));
                 debug!("{}({}), {} {}", dist, dist_code, len, window.len());
-                assert!(dist > 0 && dist < MAXIMUM_DISTANCE);
+                assert!(dist > 0 && dist < MAX_DIST);
                 assert!(dist <= window.len());
                 if window.len() + len > window.capacity() {
                     let to_write = window.len() + len - window.capacity();
@@ -380,13 +381,13 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
 
 pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<(u32, u32), Error> {
     let mut window = Vec::<u8>::new();
-    let mut bytes = [0 as u8; MAXIMUM_LENGTH];
+    let mut bytes = [0 as u8; MAX_LEN];
     let mut vlz = Vec::<LZ77>::new();
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
-    
-    let mut freq = Vec::<usize>::with_capacity(NUM_LITERAL as usize);
-    freq.resize(257, 0);
+
+    let mut freq = Vec::<usize>::with_capacity(NUM_LIT);
+    freq.resize(257, 0);//literals only
     let mut read_len = 0;
     loop {
         let len = input.read(&mut bytes).unwrap();
@@ -400,20 +401,17 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
             writer.write_bits(BlockType::DynamicHuffman as u16, 2);
         }
         read_len += len;
-        if len >= MINIMUM_LENGTH {
-            for b in bytes.windows(MINIMUM_LENGTH).take(len - (MINIMUM_LENGTH-1)) {
+        if len >= MIN_LEN {
+            for b in bytes.windows(MIN_LEN).take(len - (MIN_LEN-1)) {
                 freq[b[0] as usize] += 1;
                 vlz.push(LZ77::Literal(b[0] as u16));
             }
         }
-        /* for i in 0..min(MINIMUM_LENGTH-1, len-1) {
-            freq[bytes[len-2+i] as usize] += 1;
-            vlz.push(LZ77::Literal(bytes[len-2+i] as u16));
-        } */
-        let begin = if len >= MINIMUM_LENGTH { len - (MINIMUM_LENGTH-1) } else { 0 };
-        for i in begin..len {
-            freq[bytes[i] as usize] += 1;
-            vlz.push(LZ77::Literal(bytes[i] as u16));
+
+        let begin = if len >= MIN_LEN { len - (MIN_LEN-1) } else { 0 };
+        for b in bytes.iter().take(len).skip(begin) {
+            freq[*b as usize] += 1;
+            vlz.push(LZ77::Literal(*b as u16));
         }
     }
     vlz.push(LZ77::Literal(END_OF_BLOCK));

@@ -175,7 +175,7 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
     let mut bits: Bits = 0;
     let mut index = 0;
     let mut first = 0;
-    debug_assert!(dec.count.len() != 1);
+    debug_assert_ne!(dec.count.len(), 1);
     while b < dec.count.len() {
         let mut e = 1;
         b += 1;
@@ -189,7 +189,7 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
         let ct = dec.count[b];
         debug!("bits: {}", bits);
         if bits >= first && bits < first + ct {
-            assert!(index + bits - first < dec.symbol.len() as u16);
+            debug_assert!(index + bits - first < dec.symbol.len() as u16);
             return Ok(dec.symbol[(index + bits - first) as usize]);
         }
         index += ct;
@@ -242,11 +242,11 @@ mod test {
         v['d' as usize] =  16;
         v['a' as usize] =  45;
         let l = assign_lengths(&v);
-        assert!(l['f' as usize] == 4);
-        assert!(l['e' as usize] == 4);
-        assert!(l['c' as usize] == 3);
-        assert!(l['b' as usize] == 3);
-        assert!(l['d' as usize] == 3);
-        assert!(l['a' as usize] == 1);
+        assert_eq!(l['f' as usize], 4);
+        assert_eq!(l['e' as usize], 4);
+        assert_eq!(l['c' as usize], 3);
+        assert_eq!(l['b' as usize], 3);
+        assert_eq!(l['d' as usize], 3);
+        assert_eq!(l['a' as usize], 1);
     }
 }
