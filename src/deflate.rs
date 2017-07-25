@@ -5,16 +5,9 @@ use crc::crc32::{Digest, Hasher32, IEEE};
 use num::FromPrimitive;
 
 use bitstream::*;
+use constant::*;
 use huffman::*;
 use util::*;
-
-const END_OF_BLOCK: u16 = 256;
-const NUM_LIT: usize = 288;
-const MAX_DIST: usize = 32 * 1024;
-const MAX_LEN: usize = 258;
-const MIN_LEN: usize = 3;
-const NUM_DIST_CODE: u16 = 30;
-const HCLEN_ORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
@@ -44,7 +37,7 @@ pub enum LZ77 {
 //static fixed_lit_count: Vec<u16> = vec!(0,0,0,0,0,0,280-256,144+288-280,256-244);
 
 fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> Result<u16, Error> {
-    let mut len = lit - 257;
+    let mut len = lit - (END_OF_BLOCK + 1);
     if len < 8 {
         len += 3;
     } else {
@@ -54,6 +47,20 @@ fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> Result<u16, Erro
         debug!("Code: {} Extra Bits: {} Extra Value: {} Length: {}", lit, extra_bits, extra, len);
     }
     Ok(len)
+}
+
+fn length_code(l: u16) -> Result<usize, Error> {
+    let len = l as usize;
+    match len {
+        3...10 => Ok(len + 254),
+        11...18 => Ok(260 + (len+1) >> 1),
+        19...34 => Ok(264 + (len+1) >> 2),
+        35...66 => Ok(269 + (len-3) >> 3),
+        67...130 => Ok(273 + (len-3) >> 4),
+        131...257 => Ok(277 + (len-3) >> 5),
+        258 => Ok(285),
+        _ => Err(Error::new(ErrorKind::Other, "Incorrect length")) 
+    }
 }
 
 fn read_distance<R: Read>(dist_code: u16, reader: &mut BitReader<R>) -> Result<u16, Error> {
@@ -389,6 +396,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     let mut freq = Vec::<usize>::with_capacity(NUM_LIT);
     freq.resize(257, 0);//literals only
     let mut read_len = 0;
+
     loop {
         let len = input.read(&mut bytes).unwrap();
         if len == 0 {
@@ -402,9 +410,27 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         }
         read_len += len;
         if len >= MIN_LEN {
-            for b in bytes.windows(MIN_LEN).take(len - (MIN_LEN-1)) {
-                freq[b[0] as usize] += 1;
-                vlz.push(LZ77::Literal(b[0] as u16));
+            for (i, b) in bytes.windows(MIN_LEN).enumerate().take(len - (MIN_LEN-1)) {
+                //let hash = trans24(b);
+                //prev[i] = head[hash];
+                //head[hash] = i;
+                let mut next = 0;//prev[i];
+                let mut max_len: u16 = 0 ;
+                let mut max_dist: u16 = 0;
+                while next != 0 {
+                    // let len = compare(i, next);
+                    // if len > max_len {
+                    //     max_dist = i - next;
+                    //     max_len = len;
+                    // }
+                }
+                if max_len > 0 {
+                    freq[length_code(max_len).unwrap()] += 1;
+                    vlz.push(LZ77::Copy{ len: max_len, dist: max_dist });
+                } else {
+                    freq[b[0] as usize] += 1;
+                    vlz.push(LZ77::Literal(b[0] as u16));
+                }
             }
         }
 
@@ -430,7 +456,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     for b in vlz {
         match b {
             LZ77::Literal(l) => vhuff.push(lenc[l as usize]),
-            LZ77::Copy{len: l, dist: d} => {
+            LZ77::Copy{ len: l, dist: d } => {
                 vhuff.push(lenc[l as usize]);
                 vhuff.push(denc[d as usize]);
             }
@@ -445,9 +471,9 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     debug!("window {:?}", window);
     try!(output.write_all(&window));
     hasher.write(&window[0..window.len()]);
-    let compressed_size = window.len() as u32;
+    let compressed_size = window.len();
     debug!("compressed size: {}", compressed_size);
-    Ok((compressed_size, hasher.sum32()))
+    Ok((compressed_size as u32, hasher.sum32()))
 }
 
 #[cfg(test)]

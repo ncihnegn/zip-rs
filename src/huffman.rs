@@ -4,9 +4,7 @@ use std::io::{Error, ErrorKind, Read};
 use std::u16;
 
 use bitstream::*;
-
-const MAXBITS: usize = 15;
-const MAXLITERAL: u16 = 287;
+use constant::*;
 
 lazy_static! {
     pub static ref FIXED_LITERAL_DEC: HuffmanDec = HuffmanDec::fixed_literal_dec();
@@ -64,8 +62,8 @@ pub struct HuffmanEnc {
 
 impl HuffmanEnc {
     pub fn fixed_literal_enc() -> Vec<(Bits, u8)> {
-        let mut lit_lens = Vec::<u8>::with_capacity(MAXLITERAL as usize + 1);
-        lit_lens.resize(MAXLITERAL as usize + 1, 8);
+        let mut lit_lens = Vec::<u8>::with_capacity(NUM_LIT);
+        lit_lens.resize(NUM_LIT, 8);
         for l in lit_lens.iter_mut().take(256).skip(144) {
             *l = 9;
         }
@@ -145,7 +143,7 @@ pub fn gen_huffman_enc(v: &[u8]) -> Vec<(Bits, u8)> {
 pub fn gen_huffman_dec(lengths: &[u8], n: u16) -> HuffmanDec {
     let mut count: Vec<u16> = Vec::new();
     let max_bits = *lengths.iter().max().unwrap() as usize;
-    assert!(max_bits <= MAXBITS);
+    assert!(max_bits <= MAX_NUM_BITS);
     count.resize(max_bits+1, 0);
     for i in lengths {
         if *i != 0 {
