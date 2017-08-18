@@ -477,8 +477,10 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     let lit_clens = assign_lengths(&lfreq);
     debug!("window {:?}", window);
 
-    let dist_clens = assign_lengths(&dfreq);//Vec::new();
-    //dist_clens.push(0);
+    let mut dist_clens = assign_lengths(&dfreq);
+    if dist_clens.is_empty() {// No copy at all
+        dist_clens.push(0);
+    }
     window.extend(write_code_table(&mut writer, &lit_clens, &dist_clens).iter());
     debug!("window {:?}", window);
     let lenc = gen_huffman_enc(&lit_clens);
@@ -521,7 +523,7 @@ mod test {
         rand_lens[4] = rand::random::<u16>() as usize;
         let mut rng = rand::thread_rng();
         let uncompressed_len = *(rng.choose(&rand_lens).unwrap());
-        debug!("uncompressed length: {}", uncompressed_len);
+        info!("uncompressed length: {}", uncompressed_len);
         let mut uncompressed = Vec::<u8>::with_capacity(uncompressed_len);
         uncompressed.resize(uncompressed_len, 0);
         rng.fill_bytes(&mut uncompressed);

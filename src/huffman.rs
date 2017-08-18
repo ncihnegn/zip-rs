@@ -76,6 +76,9 @@ impl HuffmanEnc {
 
 /// Assign lengths based on frequencies
 pub fn assign_lengths(v: &[usize]) -> Vec<u8> {
+    if v.is_empty() {
+        return Vec::<u8>::new();
+    }
     const NONLEAF: u16 = u16::MAX;
     let mut heap = BinaryHeap::new();
     // Build a min-heap
