@@ -5,5 +5,6 @@ pub const MAX_LEN: usize = 258;
 pub const MAX_NUM_BITS: usize = 15;
 pub const MIN_LEN: usize = 3;
 pub const NUM_DIST_CODE: u16 = 30;
-pub const NUM_LIT: usize = 288;
+pub const MIN_NUM_LIT: usize = 257;
+pub const MAX_NUM_LIT: usize = 288;
 

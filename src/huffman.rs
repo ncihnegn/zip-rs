@@ -62,8 +62,8 @@ pub struct HuffmanEnc {
 
 impl HuffmanEnc {
     pub fn fixed_literal_enc() -> Vec<(Bits, u8)> {
-        let mut lit_lens = Vec::<u8>::with_capacity(NUM_LIT);
-        lit_lens.resize(NUM_LIT, 8);
+        let mut lit_lens = Vec::<u8>::with_capacity(MAX_NUM_LIT);
+        lit_lens.resize(MAX_NUM_LIT, 8);
         for l in lit_lens.iter_mut().take(256).skip(144) {
             *l = 9;
         }

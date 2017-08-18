@@ -410,8 +410,10 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
 
-    let mut lfreq = Vec::<usize>::with_capacity(NUM_LIT);
+    let mut lfreq = Vec::<usize>::with_capacity(MAX_NUM_LIT);
+    lfreq.resize(MAX_NUM_LIT, 0);
     let mut dfreq = Vec::<usize>::with_capacity(MAX_DIST);
+    dfreq.resize(MAX_DIST, 0);
     let mut read_len = 0;
 
     loop {
@@ -463,7 +465,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
             vlz.push(LZ77::Literal(*b as u16));
         }
     }
-    while lfreq.len() > END_OF_BLOCK as usize && *(lfreq.last().unwrap()) == 0  {
+    while lfreq.len() > MIN_NUM_LIT && *(lfreq.last().unwrap()) == 0  {
         lfreq.pop();//lfreq.resize(257, 0);//literals only
     }
     while dfreq.len() > 0 && *(dfreq.last().unwrap()) == 0 {
