@@ -50,25 +50,26 @@ fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> Result<u16, Erro
     Ok(len)
 }
 
-fn length_code(len: usize) -> Result<usize, Error> {
+fn length_code(len: usize) -> Result<(usize, u8), Error> {
+    //let bits = ((len - 10) as f32).log2().ceil() - 2;
     match len {
-        3...10 => Ok(len + 254),
-        11...18 => Ok(260 + ((len+1) >> 1)),
-        19...34 => Ok(264 + ((len+1) >> 2)),
-        35...66 => Ok(269 + ((len-3) >> 3)),
-        67...130 => Ok(273 + ((len-3) >> 4)),
-        131...257 => Ok(277 + ((len-3) >> 5)),
-        258 => Ok(285),
+        3...10 => Ok((len + 254, 0)),
+        11...18 => Ok((260 + ((len+1) >> 1), 1)),
+        19...34 => Ok((264 + ((len+1) >> 2), 2)),
+        35...66 => Ok((269 + ((len-3) >> 3), 3)),
+        67...130 => Ok((273 + ((len-3) >> 4), 4)),
+        131...257 => Ok((277 + ((len-3) >> 5), 5)),
+        258 => Ok((285, 6)),
         _ => Err(Error::new(ErrorKind::Other, "Incorrect length")) 
     }
 }
 
-fn dist_code(dist: usize) -> Result<usize, Error> {
+fn dist_code(dist: usize) -> Result<(usize, u8), Error> {
     let dm5 = dist - 5;
     let bits = (dm5 as f32).log2().floor() as usize;
     match dist {
-        1...4 => Ok(dm5 + 4),
-        5...32_768 => Ok((dm5 >> bits) + 4),
+        1...4 => Ok((dm5 + 4, bits as u8)),
+        5...32_768 => Ok(((dm5 >> bits) + 4, bits as u8)),
         _ => Err(Error::new(ErrorKind::Other, "Wrong distance"))
     }
 }
@@ -406,7 +407,7 @@ fn compare(bytes: &[u8], i: usize, j: usize) -> usize {
 
 pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<(u32, u32), Error> {
     let mut window = Vec::<u8>::new();
-    let mut bytes = [0 as u8; MAX_LEN];
+    let mut bytes = [0 as u8; MAX_LEN * 10];
     let mut vlz = Vec::<LZ77>::new();
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
@@ -450,8 +451,8 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                     next = prev[next];
                 }
                 if max_len >= MIN_LEN {
-                    lfreq[length_code(max_len).unwrap()] += 1;
-                    dfreq[dist_code(max_dist).unwrap()] += 1;
+                    lfreq[length_code(max_len).unwrap().0] += 1;
+                    dfreq[dist_code(max_dist).unwrap().0] += 1;
                     vlz.push(LZ77::Copy{ len: max_len, dist: max_dist });
                 } else {
                     lfreq[b[0] as usize] += 1;
@@ -491,8 +492,9 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         match b {
             LZ77::Literal(l) => vhuff.push(lenc[l as usize]),
             LZ77::Copy{ len: l, dist: d } => {
-                vhuff.push(lenc[length_code(l).unwrap() as usize]);
-//TODO: insert extra bits
+                let lc = length_code(l).unwrap();
+                vhuff.push(lenc[lc.0]);
+                vhuff.push((lc.0 as u16, lc.1));
                 vhuff.push(denc[d as usize]);
             }
         }
