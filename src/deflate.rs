@@ -53,21 +53,22 @@ fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> Result<u16, Erro
 fn length_code(len: usize) -> Result<usize, Error> {
     match len {
         3...10 => Ok(len + 254),
-        11...18 => Ok(260 + (len+1) >> 1),
-        19...34 => Ok(264 + (len+1) >> 2),
-        35...66 => Ok(269 + (len-3) >> 3),
-        67...130 => Ok(273 + (len-3) >> 4),
-        131...257 => Ok(277 + (len-3) >> 5),
+        11...18 => Ok(260 + ((len+1) >> 1)),
+        19...34 => Ok(264 + ((len+1) >> 2)),
+        35...66 => Ok(269 + ((len-3) >> 3)),
+        67...130 => Ok(273 + ((len-3) >> 4)),
+        131...257 => Ok(277 + ((len-3) >> 5)),
         258 => Ok(285),
         _ => Err(Error::new(ErrorKind::Other, "Incorrect length")) 
     }
 }
 
 fn dist_code(dist: usize) -> Result<usize, Error> {
+    let dm5 = dist - 5;
+    let bits = (dm5 as f32).log2().floor() as usize;
     match dist {
-        1...4 => Ok(dist - 1),
-        5...8 => Ok((dist - 5) >> 1 + 4),
-        9...16 => Ok((dist - 5) >> 1 + 4),
+        1...4 => Ok(dm5 + 4),
+        5...32_768 => Ok((dm5 >> bits) + 4),
         _ => Err(Error::new(ErrorKind::Other, "Wrong distance"))
     }
 }
@@ -275,22 +276,22 @@ fn write_code_lengths(writer: &mut BitWriter, eclens: &[CodeLength], enc: &[(Bit
 #[allow(dead_code)]
 fn read_fixed_literal<R: Read>(reader: &mut BitReader<R>) -> u16 {
     let mut lit = reader.read_bits(7, false).unwrap();
-    if lit <= 0b0010111 {
+    if lit <= 0b001_0111 {
         lit += 256;
     } else {
         let b = reader.read_bits(1, false).unwrap();
         lit <<= 1;
         lit |= b;
-        if lit <= 0b10111111 {
-            lit -= 0b00110000;
-        } else if lit <= 0b11000111 {
-            lit -= 0b11000000;
+        if lit <= 0b1011_1111 {
+            lit -= 0b0011_0000;
+        } else if lit <= 0b1100_0111 {
+            lit -= 0b1100_0000;
             lit += 280;
         } else {
             let b = reader.read_bits(1, false).unwrap();
             lit <<= 1;
             lit |= b;
-            lit -= 0b110010000;
+            lit -= 0b1_1001_0000;
             lit += 144;
         }
     }
@@ -468,7 +469,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     while lfreq.len() > MIN_NUM_LIT && *(lfreq.last().unwrap()) == 0  {
         lfreq.pop();//lfreq.resize(257, 0);//literals only
     }
-    while dfreq.len() > 0 && *(dfreq.last().unwrap()) == 0 {
+    while !dfreq.is_empty() && *(dfreq.last().unwrap()) == 0 {
         dfreq.pop();
     }
     vlz.push(LZ77::Literal(END_OF_BLOCK));

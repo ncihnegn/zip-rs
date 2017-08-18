@@ -16,13 +16,13 @@ use util::*;
 #[repr(u32)]
 #[derive(FromPrimitive)]
 enum Signature {
-    LFH = 0x04034b50,
-    AED = 0x08064b50,
-    CFH = 0x02014b50,
-    DS = 0x05054b50,
-    ECDR64 = 0x06064b50,
-    ECDL64 = 0x07064b50,
-    ECDR = 0x06054b50,
+    LFH = 0x0403_4b50,
+    AED = 0x0806_4b50,
+    CFH = 0x0201_4b50,
+    DS = 0x0505_4b50,
+    ECDR64 = 0x0606_4b50,
+    ECDL64 = 0x0706_4b50,
+    ECDR = 0x0605_4b50,
 }
 
 #[repr(u8)]
