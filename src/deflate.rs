@@ -479,6 +479,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     let lit_clens = assign_lengths(&lfreq);
     debug!("window {:?}", window);
 
+    info!("dfreq {:?}", dfreq);
     let mut dist_clens = assign_lengths(&dfreq);
     if dist_clens.is_empty() {// No copy at all
         dist_clens.push(0);
@@ -487,6 +488,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
     debug!("window {:?}", window);
     let lenc = gen_huffman_enc(&lit_clens);
     let denc = gen_huffman_enc(&dist_clens);
+    info!("denc len {}", denc.len());
     let mut vhuff = Vec::new();
     for b in vlz {
         match b {
@@ -494,8 +496,10 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
             LZ77::Copy{ len: l, dist: d } => {
                 let lc = length_code(l).unwrap();
                 vhuff.push(lenc[lc.0]);
-                vhuff.push((lc.0 as u16, lc.1));
-                vhuff.push(denc[d as usize]);
+                vhuff.push(((lc.0 & ((1 << lc.1)-1)) as u16, lc.1));
+                let dc = dist_code(d).unwrap();
+                vhuff.push(denc[dc.0]);
+                vhuff.push(((dc.0 & ((1 << dc.1)-1)) as u16, dc.1));
             }
         }
     }
