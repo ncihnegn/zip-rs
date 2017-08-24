@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Write};
 use std::iter::FromIterator;
+use std::u16;
 
 use crc::crc32::{Digest, Hasher32, IEEE};
 use num::FromPrimitive;
@@ -142,6 +143,8 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     let hlit_len = try!(read_code_lengths(reader, &clen_dec, hlit));
     let hdist_len = try!(read_code_lengths(reader, &clen_dec, hdist));
     debug!("Read code table done");
+    info!("hlit_len: {} {:?}", hlit, hlit_len);
+    info!("hdist_len: {} {:?}", hdist, hdist_len);
     Ok((gen_huffman_dec(&hlit_len, hlit as u16), gen_huffman_dec(&hdist_len, hdist as u16)))
 }
 
@@ -320,6 +323,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         }
         _ => return Err(Error::new(ErrorKind::Other, "Bad block type"))
     }
+    info!("Dec {:?}", dec);
     let block_type = block_type.unwrap();
     let mut window = Vec::<u8>::with_capacity(MAX_DIST + MAX_LEN);
     loop {
@@ -362,7 +366,7 @@ pub fn inflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 assert!(dcode < NUM_DIST_CODE);
                 let dist = try!(read_distance(dcode, &mut reader)) as usize;
                 debug!("{}: {}", decompressed_size, to_hex_string(&window));
-                debug!("{}({}), {} {}", dist, dcode, len, window.len());
+                info!("{}({}), {} {}", dist, dcode, len, window.len());
                 assert!(dist > 0 && dist < MAX_DIST);
                 assert!(dist <= window.len());
                 if window.len() + len > window.capacity() {
@@ -407,7 +411,7 @@ fn compare(bytes: &[u8], i: usize, j: usize) -> usize {
 
 pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWriter<W>) -> Result<(u32, u32), Error> {
     let mut window = Vec::<u8>::new();
-    let mut bytes = [0 as u8; MAX_LEN * 10];
+    let mut bytes = [0 as u8; u16::MAX as usize];
     let mut vlz = Vec::<LZ77>::new();
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
@@ -422,7 +426,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
         let len = input.read(&mut bytes).unwrap();
         if len == 0 {
             if read_len == 0 {
-                return Ok((0, 0)); 
+                return Ok((0, 0));
             } else {
               break;
             }
@@ -442,7 +446,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
                 let mut next = prev[i];
                 let mut max_len: usize = 0 ;
                 let mut max_dist: usize = 0;
-                while next != len {
+                while next != len && i - next < MAX_DIST {
                     let len = compare(&bytes, i, next);
                     if len > max_len {
                         max_dist = i - next;
@@ -481,6 +485,7 @@ pub fn deflate<R: Read, W: Write>(input: &mut BufReader<R>, output: &mut BufWrit
 
     info!("dfreq {:?}", dfreq);
     let mut dist_clens = assign_lengths(&dfreq);
+    info!("dist_clens {:?}", dist_clens);
     if dist_clens.is_empty() {// No copy at all
         dist_clens.push(0);
     }

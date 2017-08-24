@@ -11,7 +11,7 @@ lazy_static! {
     pub static ref FIXED_LITERAL_ENC: Vec<(Bits, u8)> = HuffmanEnc::fixed_literal_enc();
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 struct Char {
     val: u16,
     freq: usize,
@@ -99,13 +99,15 @@ pub fn assign_lengths(v: &[usize]) -> Vec<u8> {
     let mut level: u8 = 0;
     let mut lengths = Vec::<u8>::with_capacity(v.len());
     lengths.resize(v.len(), 0);
+    info!("{:?}", todo);
     while !todo.is_empty() {
         let mut next = Vec::new();
         for c in todo {
             c.left.map(|l| { next.push(*l); });
             c.right.map(|r| { next.push(*r); });
             if c.val != NONLEAF {
-                lengths[c.val as usize] = level;
+                info!("val: {}, level: {}", c.val, level);
+                lengths[c.val as usize] = if level > 0 { level } else { 1 };
             }
         }
         todo = next;
@@ -186,9 +188,11 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
         }
         bits <<= e;
         first <<= e;
+        debug!("read {} bits", e);
         bits |= try!(reader.read_bits(e, false));
         let ct = dec.count[b];
         debug!("bits: {}", bits);
+        debug!("first: {} ct: {}", first, ct);
         if bits >= first && bits < first + ct {
             debug_assert!(index + bits - first < dec.symbol.len() as u16);
             return Ok(dec.symbol[(index + bits - first) as usize]);
@@ -202,6 +206,7 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::io::{BufReader, Cursor};
 
     #[test]
     fn fixed_huffman_literal() {
@@ -249,5 +254,30 @@ mod test {
         assert_eq!(l['b' as usize], 3);
         assert_eq!(l['d' as usize], 3);
         assert_eq!(l['a' as usize], 1);
+    }
+
+    #[test]
+    fn assign_lengths_re() {
+        let mut v = Vec::new();
+        v.resize(6, 0);
+        v[5] = 2;
+        let l = assign_lengths(&v);
+        error!("{:?}", l);
+    }
+
+    #[test]
+    fn single_symbol() {
+        let code_lens = vec![1];
+        //let enc = gen_huffman_enc(&code_lens);
+        let dec = gen_huffman_dec(&code_lens, 1);
+        //error!("{:?}", enc);
+        //error!("{:?}", dec);
+
+        let mut writer = BitWriter::new();
+        let mut vec = writer.write_bits(0x0, 1);
+        writer.flush().map(|c| { vec.push(c); });
+        let mut input = BufReader::new(Cursor::new(vec));
+        let mut reader = BitReader::new(&mut input);
+        let _ = read_code(&mut reader, &dec);
     }
 }
