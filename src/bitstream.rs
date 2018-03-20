@@ -35,7 +35,11 @@ pub fn reverse(a: Bits, n: u8) -> Bits {
 
 impl<'a, R: Read> BitReader<'a, R> {
     pub fn new(buf: &'a mut R) -> BitReader<R> {
-        BitReader { buf: buf, bits: 0, acc: 0 }
+        BitReader {
+            buf,
+            bits: 0,
+            acc: 0,
+        }
     }
 
     //order: true for LSB and false for MSB (Huffman codes)
@@ -45,7 +49,7 @@ impl<'a, R: Read> BitReader<'a, R> {
         while self.bits < n {
             try!(self.buf.read_exact(&mut bytes));
             let byte = bytes[0];
-            self.acc |= (byte as u32) << self.bits;
+            self.acc |= (u32::from(byte)) << self.bits;
             self.bits += 8;
         }
         let res = self.acc & ((1 << n) - 1);
@@ -62,7 +66,7 @@ impl<'a, R: Read> BitReader<'a, R> {
 #[derive(Default)]
 pub struct BitWriter {
     bits: u8,
-    acc: u32
+    acc: u32,
 }
 
 impl BitWriter {
@@ -73,8 +77,8 @@ impl BitWriter {
     pub fn write_bits(&mut self, b: Bits, n: u8) -> Vec<u8> {
         assert!(n <= 16);
         assert!(b <= 1 << n);
-        let c = b;//if order { b } else { reverse(b, n) };
-        self.acc |= (c as u32) << self. bits;
+        let c = b; //if order { b } else { reverse(b, n) };
+        self.acc |= (u32::from(c)) << self.bits;
         self.bits += n;
         let nb = self.bits / 8;
         let mut bytes = Vec::<u8>::with_capacity(nb as usize);
@@ -119,7 +123,9 @@ mod test {
         assert!(vec.len() == 1);
         vec.extend(writer.write_bits(0x3AA5, 15).iter());
         assert!(vec.len() == 3);
-        writer.flush().map(|c| { vec.push(c); });
+        writer.flush().map(|c| {
+            vec.push(c);
+        });
         assert!(vec.len() == 4);
         let mut input = BufReader::new(Cursor::new(vec));
         let mut reader = BitReader::new(&mut input);

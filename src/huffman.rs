@@ -16,7 +16,7 @@ struct Char {
     val: u16,
     freq: usize,
     left: Option<Box<Char>>,
-    right: Option<Box<Char>>
+    right: Option<Box<Char>>,
 }
 
 impl Ord for Char {
@@ -40,11 +40,14 @@ pub struct HuffmanDec {
 
 impl HuffmanDec {
     pub fn new() -> HuffmanDec {
-        HuffmanDec { count: Vec::new(), symbol: Vec::new() }
+        HuffmanDec {
+            count: Vec::new(),
+            symbol: Vec::new(),
+        }
     }
 
     pub fn fixed_literal_dec() -> HuffmanDec {
-        let count: Vec<u16> = vec![0,0,0,0,0,0,0,280-256,144+288-280,256-144];
+        let count: Vec<u16> = vec![0, 0, 0, 0, 0, 0, 0, 280 - 256, 144 + 288 - 280, 256 - 144];
         let mut symbol: Vec<u16> = (256..280).collect();
         let mut len8 = (0..144).collect();
         symbol.append(&mut len8);
@@ -52,13 +55,11 @@ impl HuffmanDec {
         symbol.append(&mut len8a);
         let mut len9: Vec<u16> = (144..256).collect();
         symbol.append(&mut len9);
-        HuffmanDec { count: count, symbol: symbol }
+        HuffmanDec { count, symbol }
     }
 }
 
-pub struct HuffmanEnc {
-
-}
+pub struct HuffmanEnc {}
 
 impl HuffmanEnc {
     pub fn fixed_literal_enc() -> Vec<(Bits, u8)> {
@@ -84,14 +85,23 @@ pub fn assign_lengths(v: &[usize]) -> Vec<u8> {
     // Build a min-heap
     for (c, f) in v.iter().enumerate() {
         if *f > 0 {
-            heap.push(Char { val: c as u16, freq: *f, left: None, right: None});
+            heap.push(Char {
+                val: c as u16,
+                freq: *f,
+                left: None,
+                right: None,
+            });
         }
     }
     while heap.len() > 1 {
         let l = heap.pop().unwrap();
         let r = heap.pop().unwrap();
-        heap.push(Char { val: NONLEAF, freq: l.freq + r.freq,
-                         left: Some(Box::new(l)), right: Some(Box::new(r)) });
+        heap.push(Char {
+            val: NONLEAF,
+            freq: l.freq + r.freq,
+            left: Some(Box::new(l)),
+            right: Some(Box::new(r)),
+        });
     }
     let root = heap.pop().unwrap();
     let mut todo = Vec::new();
@@ -103,8 +113,12 @@ pub fn assign_lengths(v: &[usize]) -> Vec<u8> {
     while !todo.is_empty() {
         let mut next = Vec::new();
         for c in todo {
-            c.left.map(|l| { next.push(*l); });
-            c.right.map(|r| { next.push(*r); });
+            c.left.map(|l| {
+                next.push(*l);
+            });
+            c.right.map(|r| {
+                next.push(*r);
+            });
             if c.val != NONLEAF {
                 info!("val: {}, level: {}", c.val, level);
                 lengths[c.val as usize] = if level > 0 { level } else { 1 };
@@ -120,22 +134,22 @@ pub fn assign_lengths(v: &[usize]) -> Vec<u8> {
 pub fn gen_huffman_enc(v: &[u8]) -> Vec<(Bits, u8)> {
     let mut bl_count = Vec::<Bits>::new();
     let max_bits = *v.iter().max().unwrap() as usize;
-    bl_count.resize(max_bits+1, 0);
+    bl_count.resize(max_bits + 1, 0);
     for i in v {
         bl_count[*i as usize] += 1;
     }
     let mut next_code = Vec::<Bits>::new();
-    next_code.resize(max_bits+1, 0);
+    next_code.resize(max_bits + 1, 0);
     let mut code: Bits = 0;
     bl_count[0] = 0;
     for (bits, bl) in bl_count.iter().enumerate().take(max_bits) {
         code = (code + bl) << 1;
-        next_code[bits+1] = code;
+        next_code[bits + 1] = code;
     }
-    let max_code = v.len()-1;
+    let max_code = v.len() - 1;
     let mut enc = Vec::<(Bits, u8)>::new();
-    enc.resize(max_code+1, (0, 0));
-    for (n, l) in v.iter().enumerate().take(max_code+1) {
+    enc.resize(max_code + 1, (0, 0));
+    for (n, l) in v.iter().enumerate().take(max_code + 1) {
         let len = *l as usize;
         if len != 0 {
             enc[n] = (reverse(next_code[len], *l), *l);
@@ -149,16 +163,16 @@ pub fn gen_huffman_dec(lengths: &[u8], n: u16) -> HuffmanDec {
     let mut count: Vec<u16> = Vec::new();
     let max_bits = *lengths.iter().max().unwrap() as usize;
     assert!(max_bits <= MAX_NUM_BITS);
-    count.resize(max_bits+1, 0);
+    count.resize(max_bits + 1, 0);
     for i in lengths {
         if *i != 0 {
             count[*i as usize] += 1;
         }
     }
     let mut offsets: Vec<u16> = Vec::new();
-    offsets.resize(max_bits+1, 0);
+    offsets.resize(max_bits + 1, 0);
     for (i, c) in count.iter().enumerate().take(max_bits).skip(1) {
-        offsets[i+1] = offsets[i] + *c;
+        offsets[i + 1] = offsets[i] + *c;
     }
     //let n = offsets[max_bits+1];//total number of symbols
     let mut symbol: Vec<u16> = Vec::new();
@@ -170,7 +184,7 @@ pub fn gen_huffman_dec(lengths: &[u8], n: u16) -> HuffmanDec {
             offsets[len] += 1;
         }
     }
-    HuffmanDec { count: count, symbol: symbol }
+    HuffmanDec { count, symbol }
 }
 
 pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result<u16, Error> {
@@ -241,12 +255,12 @@ mod test {
         // Introduction to Algorithms, Third Edition, Figure 16.5
         let mut v = Vec::new();
         v.resize('f' as usize + 1, 0);
-        v['f' as usize] =  5;
-        v['e' as usize] =  9;
-        v['c' as usize] =  12;
-        v['b' as usize] =  13;
-        v['d' as usize] =  16;
-        v['a' as usize] =  45;
+        v['f' as usize] = 5;
+        v['e' as usize] = 9;
+        v['c' as usize] = 12;
+        v['b' as usize] = 13;
+        v['d' as usize] = 16;
+        v['a' as usize] = 45;
         let l = assign_lengths(&v);
         assert_eq!(l['f' as usize], 4);
         assert_eq!(l['e' as usize], 4);
@@ -262,7 +276,7 @@ mod test {
         v.resize(6, 0);
         v[5] = 2;
         let l = assign_lengths(&v);
-        error!("{:?}", l);
+        assert_eq!(l[5] as usize, 1);
     }
 
     #[test]
@@ -275,7 +289,9 @@ mod test {
 
         let mut writer = BitWriter::new();
         let mut vec = writer.write_bits(0x0, 1);
-        writer.flush().map(|c| { vec.push(c); });
+        writer.flush().map(|c| {
+            vec.push(c);
+        });
         let mut input = BufReader::new(Cursor::new(vec));
         let mut reader = BitReader::new(&mut input);
         let _ = read_code(&mut reader, &dec);

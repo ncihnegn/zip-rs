@@ -8,9 +8,6 @@ fn main() {
     env_logger::init().unwrap();
     let args: Vec<String> = env::args().collect();
     match args.len() {
-        1 => {
-            println!("Usage: gunzip myfile.zip");
-        }
         2 => {
             let file_name = args[1].as_str();
             let v = parse(file_name).unwrap();
@@ -26,4 +23,3 @@ fn main() {
         }
     }
 }
-

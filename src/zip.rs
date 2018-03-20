@@ -85,9 +85,11 @@ struct Version {
 
 impl Version {
     pub fn from_word(a: &[u8; 2]) -> Option<Version> {
-        Compat::from_u8(a[1]).map(|x|
-            Version { compatibility: x, major: a[0] % (1 << 4),
-                                 minor: a[0] >> 4 })
+        Compat::from_u8(a[1]).map(|x| Version {
+            compatibility: x,
+            major: a[0] % (1 << 4),
+            minor: a[0] >> 4,
+        })
     }
 }
 
@@ -129,14 +131,10 @@ impl fmt::Display for CompMethod {
         match *self {
             CompMethod::Store => write!(f, "Store"),
             CompMethod::Shrink => write!(f, "Shrink"),
-            CompMethod::ReduceFactor1 =>
-                write!(f, "Reduce with Compression Factor 1"),
-            CompMethod::ReduceFactor2 =>
-                write!(f, "Reduce with Compression Factor 2"),
-            CompMethod::ReduceFactor3 =>
-                write!(f, "Reduce with Compression Factor 3"),
-            CompMethod::ReduceFactor4 =>
-                write!(f, "Reduce with Compression Factor 4"),
+            CompMethod::ReduceFactor1 => write!(f, "Reduce with Compression Factor 1"),
+            CompMethod::ReduceFactor2 => write!(f, "Reduce with Compression Factor 2"),
+            CompMethod::ReduceFactor3 => write!(f, "Reduce with Compression Factor 3"),
+            CompMethod::ReduceFactor4 => write!(f, "Reduce with Compression Factor 4"),
             CompMethod::Implode => write!(f, "Implode"),
             CompMethod::Tokenize => write!(f, "Tokenize"),
             CompMethod::Deflate => write!(f, "Deflate"),
@@ -178,10 +176,7 @@ impl fmt::Display for DeflateOption {
 
 #[derive(Debug)]
 enum CompOption {
-    Implode {
-        dictionary_size: bool,
-        trees: bool,
-    },
+    Implode { dictionary_size: bool, trees: bool },
     Deflate(DeflateOption),
     LZMA(bool),
 }
@@ -189,13 +184,15 @@ enum CompOption {
 impl CompOption {
     fn new(a: u8, method: &CompMethod) -> Option<CompOption> {
         match *method {
-            CompMethod::Implode => Some(CompOption::Implode{
-                dictionary_size: a & 2 == 2, trees: a & 1 == 1 }),
-            CompMethod::Deflate | CompMethod::Deflate64 =>
-                DeflateOption::from_u8(a).map(CompOption::Deflate),
-            CompMethod::LZMA => Some(
-                CompOption::LZMA(a & 1 == 1)),
-            _ => None
+            CompMethod::Implode => Some(CompOption::Implode {
+                dictionary_size: a & 2 == 2,
+                trees: a & 1 == 1,
+            }),
+            CompMethod::Deflate | CompMethod::Deflate64 => {
+                DeflateOption::from_u8(a).map(CompOption::Deflate)
+            }
+            CompMethod::LZMA => Some(CompOption::LZMA(a & 1 == 1)),
+            _ => None,
         }
     }
 }
@@ -203,8 +200,10 @@ impl CompOption {
 impl fmt::Display for CompOption {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            CompOption::Implode { dictionary_size, trees } =>
-                write!(f, "{}-{}", dictionary_size, trees),
+            CompOption::Implode {
+                dictionary_size,
+                trees,
+            } => write!(f, "{}-{}", dictionary_size, trees),
             CompOption::Deflate(ref option) => write!(f, "{}", option),
             CompOption::LZMA(option) => write!(f, "{}", option),
         }
@@ -226,23 +225,34 @@ struct GPBF {
 impl GPBF {
     fn new(a: &[u8], method: &CompMethod) -> GPBF {
         let option = CompOption::new(a[0] >> 1, method);
-        GPBF { encrypted: a[0] == 1, compression_option: option,
-               crc: a[0] & (1 << 3) == 1 << 3,
-               enhanced_deflating: a[0] & (1 << 4) == 1 << 4,
-               patched_data: a[0] & (1 << 5) == 1 << 5,
-               strong_encryption: a[0] & (1 << 6) == 1 << 6,
-               utf8: a[1] & (1 << (11-8)) == 1 << (11-8),
-               enhanced_compression: a[1] & (1 << (12-8)) == 1 << (12-8),
-               masked: a[1] & (1 << (13-8)) == 1 << (13-8) }
+        GPBF {
+            encrypted: a[0] == 1,
+            compression_option: option,
+            crc: a[0] & (1 << 3) == 1 << 3,
+            enhanced_deflating: a[0] & (1 << 4) == 1 << 4,
+            patched_data: a[0] & (1 << 5) == 1 << 5,
+            strong_encryption: a[0] & (1 << 6) == 1 << 6,
+            utf8: a[1] & (1 << (11 - 8)) == 1 << (11 - 8),
+            enhanced_compression: a[1] & (1 << (12 - 8)) == 1 << (12 - 8),
+            masked: a[1] & (1 << (13 - 8)) == 1 << (13 - 8),
+        }
     }
 }
 
 impl fmt::Display for GPBF {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "encrypted: {} {} {} {} {} {} {} {}", self.encrypted,
-               self.crc, self.enhanced_deflating, self.patched_data,
-               self.strong_encryption, self.utf8, self.enhanced_compression,
-               self.masked)
+        write!(
+            f,
+            "encrypted: {} {} {} {} {} {} {} {}",
+            self.encrypted,
+            self.crc,
+            self.enhanced_deflating,
+            self.patched_data,
+            self.strong_encryption,
+            self.utf8,
+            self.enhanced_compression,
+            self.masked
+        )
     }
 }
 
@@ -259,16 +269,22 @@ pub struct LocalFileHeader {
     last_mod_file_date: u16,
     file_name_length: u16,
     extra_field_length: u16,
-    offset: u64
+    offset: u64,
 }
 
 impl fmt::Display for LocalFileHeader {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} (0x{:08x}) {} {} {:?} {}->{}", self.file_name,
-               self.crc, self.version_needed_to_extract,
-               self.compression_method,
-               self.general_purpose_bit_flag.compression_option,
-               self.compressed_size, self.uncompressed_size)
+        write!(
+            f,
+            "{} (0x{:08x}) {} {} {:?} {}->{}",
+            self.file_name,
+            self.crc,
+            self.version_needed_to_extract,
+            self.compression_method,
+            self.general_purpose_bit_flag.compression_option,
+            self.compressed_size,
+            self.uncompressed_size
+        )
     }
 }
 
@@ -284,11 +300,17 @@ struct CentralFileHeader {
 
 impl fmt::Display for CentralFileHeader {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} (0x{:08x}) {} {} {:?} {}->{}", self.lfh.file_name,
-               self.lfh.crc, self.lfh.version_needed_to_extract,
-               self.lfh.compression_method,
-               self.lfh.general_purpose_bit_flag.compression_option,
-               self.lfh.compressed_size, self.lfh.uncompressed_size)
+        write!(
+            f,
+            "{} (0x{:08x}) {} {} {:?} {}->{}",
+            self.lfh.file_name,
+            self.lfh.crc,
+            self.lfh.version_needed_to_extract,
+            self.lfh.compression_method,
+            self.lfh.general_purpose_bit_flag.compression_option,
+            self.lfh.compressed_size,
+            self.lfh.uncompressed_size
+        )
     }
 }
 
@@ -308,14 +330,19 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
     try!(reader.read_exact(&mut word));
     let version = match Version::from_word(&word) {
         Some(x) => x,
-        None => return Err(Error::new(ErrorKind::Other, "Bad version in LFH"))
+        None => return Err(Error::new(ErrorKind::Other, "Bad version in LFH")),
     };
     let _ = reader.read_exact(&mut word);
     let tmp = word;
     let _ = reader.read_exact(&mut word);
     let method = match CompMethod::from_u16(trans16(word)) {
         Some(x) => x,
-        None => return Err(Error::new(ErrorKind::Other, "Bad compression method in LFH"))
+        None => {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Bad compression method in LFH",
+            ))
+        }
     };
     let gpbf = GPBF::new(&tmp, &method);
     let _ = reader.read_exact(&mut word);
@@ -337,14 +364,15 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
         version_needed_to_extract: version,
         general_purpose_bit_flag: gpbf,
         compression_method: method,
-        compressed_size: compressed_size,
-        uncompressed_size: uncompressed_size,
-        crc: crc,
+        compressed_size,
+        uncompressed_size,
+        crc,
         last_mod_file_time: time,
         last_mod_file_date: date,
-        file_name_length: file_name_length,
-        extra_field_length: extra_field_length,
-        offset: 0})
+        file_name_length,
+        extra_field_length,
+        offset: 0,
+    })
 }
 
 /// Parse a zip file
@@ -379,9 +407,9 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
                 v.resize(lfh.file_name_length as usize, 0);
                 try!(reader.read_exact(&mut v as &mut [u8]));
                 lfh.file_name = String::from_utf8(v).unwrap();
-                try!(reader.seek(Current(lfh.extra_field_length as i64)));
+                try!(reader.seek(Current(i64::from(lfh.extra_field_length))));
                 lfh.offset = try!(reader.seek(Current(0)));
-                try!(reader.seek(Current(lfh.compressed_size as i64)));
+                try!(reader.seek(Current(i64::from(lfh.compressed_size))));
                 debug!("{}", lfh);
                 lfhs.push(lfh);
             }
@@ -391,7 +419,7 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
                 try!(reader.read_exact(&mut word));
                 let version_made_by = match Version::from_word(&word) {
                     Some(x) => x,
-                    None => return Err(Error::new(ErrorKind::Other, "Bad version made by"))
+                    None => return Err(Error::new(ErrorKind::Other, "Bad version made by")),
                 };
                 try!(reader.read_exact(&mut lfh_array));
                 let mut lfh = try!(read_lfh(lfh_array));
@@ -409,15 +437,16 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
                 v.resize(lfh.file_name_length as usize, 0);
                 try!(reader.read_exact(&mut v as &mut [u8]));
                 lfh.file_name = String::from_utf8(v).unwrap();
-                try!(reader.seek(Current(lfh.extra_field_length as i64)));
-                try!(reader.seek(Current(file_comment_length as i64)));
+                try!(reader.seek(Current(i64::from(lfh.extra_field_length))));
+                try!(reader.seek(Current(i64::from(file_comment_length))));
                 let cfh = CentralFileHeader {
-                    version_made_by: version_made_by,
+                    version_made_by,
                     disk_number_start: disk_number,
                     internal_file_attributes: internal,
                     external_file_attributes: external,
                     relative_offset_of_local_header: offset,
-                    lfh: lfh };
+                    lfh,
+                };
                 debug!("{}", cfh);
             }
             Some(Signature::ECDR64) => {
@@ -435,7 +464,7 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
                 try!(reader.seek(Current(2 * 4 + 4 * 2)));
                 try!(reader.read_exact(&mut word));
                 let file_comment_length: u16 = trans16(word);
-                try!(reader.seek(Current(file_comment_length as i64)));
+                try!(reader.seek(Current(i64::from(file_comment_length))));
             }
             _ => {
                 return Err(Error::new(ErrorKind::Other, "Bad signature"));
@@ -482,7 +511,12 @@ pub fn extract(file_name: &str, lfh: &LocalFileHeader) -> Result<(), Error> {
             assert_eq!(decompressed_size, lfh.uncompressed_size);
             assert_eq!(checksum, lfh.crc);
         }
-        _ => return Err(Error::new(ErrorKind::Other, "Unsupported compression method")),
+        _ => {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Unsupported compression method",
+            ))
+        }
     }
     try!(writer.flush());
     Ok(())
@@ -507,4 +541,3 @@ mod test {
         assert!(parse("test/dynamic_huffman.zip").is_ok());
     }
 }
-

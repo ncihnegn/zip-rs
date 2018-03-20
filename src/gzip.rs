@@ -99,9 +99,15 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
         try!(reader.read_exact(&mut byte));
         assert_eq!(byte[0], 0x8B);
         try!(reader.read_exact(&mut byte));
-        assert_eq!(byte[0], 8);//Deflate Only
+        assert_eq!(byte[0], 8); //Deflate Only
         try!(reader.read_exact(&mut byte));
-        let mut flg = Flags { ftext: false, fhcrc: false, fextra: false, fname: false, fcomment: false };
+        let mut flg = Flags {
+            ftext: false,
+            fhcrc: false,
+            fextra: false,
+            fname: false,
+            fcomment: false,
+        };
         if byte[0] & 1 == 1 {
             flg.ftext = true;
         }
@@ -140,7 +146,7 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
         let file_name = if flg.fname {
             let mut v = Vec::<u8>::new();
             try!(reader.read_until(0, &mut v));
-            v.pop();//Remove trailing '\0'
+            v.pop(); //Remove trailing '\0'
             String::from_utf8(v).unwrap()
         } else {
             let mut tmp = String::from(file_name);
@@ -164,7 +170,10 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
         }
         let crc16: u16 = if flg.fhcrc {
             try!(reader.read_exact(&mut word));
-            trans16(word) } else { 0 };
+            trans16(word)
+        } else {
+            0
+        };
         let offset = reader.seek(SeekFrom::Current(0)).unwrap();
         let out = Vec::<u8>::new();
         let mut writer = BufWriter::new(out);
@@ -177,12 +186,26 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
         let crc32: u32 = trans32(dword);
         try!(reader.read_exact(&mut dword));
         let isize: u32 = trans32(dword);
-        debug!("{}({:08x}), expected {}({:08x})", decompressed_size, crc, isize, crc32);
+        debug!(
+            "{}({:08x}), expected {}({:08x})",
+            decompressed_size, crc, isize, crc32
+        );
         assert_eq!(decompressed_size, isize);
         assert_eq!(crc, crc32);
         debug!("\n{}", str::from_utf8(&out).unwrap());
 
-        let mem = GzipMember { flg: flg, mtime: mtime, xfl: xfl, os: os, crc16: crc16, crc32: crc32, isize: isize, offset: offset, file_name: file_name, file_comment: file_comment };
+        let mem = GzipMember {
+            flg,
+            mtime,
+            xfl,
+            os,
+            crc16,
+            crc32,
+            isize,
+            offset,
+            file_name,
+            file_comment,
+        };
         members.push(mem);
     }
     Ok(members)
@@ -200,7 +223,6 @@ pub fn extract(file_name: &str, member: &GzipMember) -> Result<(), Error> {
     try!(writer.flush());
     Ok(())
 }
-
 
 #[cfg(test)]
 mod test {
