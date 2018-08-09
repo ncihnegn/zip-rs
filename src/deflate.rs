@@ -529,9 +529,9 @@ pub fn deflate<R: Read, W: Write>(
         window.extend(v.iter());
         //debug!("window {:?}", window);
     }
-    writer.flush().map(|c| {
+    if let Some(c) = writer.flush() {
         window.push(c);
-    });
+    }
     debug!("window {:?}", window);
     try!(output.write_all(&window));
     hasher.write(&window[0..window.len()]);

@@ -113,12 +113,12 @@ pub fn assign_lengths(v: &[usize]) -> Vec<u8> {
     while !todo.is_empty() {
         let mut next = Vec::new();
         for c in todo {
-            c.left.map(|l| {
+            if let Some(l) = c.left {
                 next.push(*l);
-            });
-            c.right.map(|r| {
+            }
+            if let Some(r) = c.right {
                 next.push(*r);
-            });
+            }
             if c.val != NONLEAF {
                 info!("val: {}, level: {}", c.val, level);
                 lengths[c.val as usize] = if level > 0 { level } else { 1 };

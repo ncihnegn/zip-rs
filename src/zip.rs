@@ -84,7 +84,7 @@ struct Version {
 }
 
 impl Version {
-    pub fn from_word(a: &[u8; 2]) -> Option<Version> {
+    pub fn from_word(a: [u8; 2]) -> Option<Version> {
         Compat::from_u8(a[1]).map(|x| Version {
             compatibility: x,
             major: a[0] % (1 << 4),
@@ -328,7 +328,7 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
     let mut word: [u8; 2] = [0; 2];
     let mut dword: [u8; 4] = [0; 4];
     try!(reader.read_exact(&mut word));
-    let version = match Version::from_word(&word) {
+    let version = match Version::from_word(word) {
         Some(x) => x,
         None => return Err(Error::new(ErrorKind::Other, "Bad version in LFH")),
     };
@@ -417,7 +417,7 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
                 cfh_counter += 1;
                 debug!("central file header {}", cfh_counter);
                 try!(reader.read_exact(&mut word));
-                let version_made_by = match Version::from_word(&word) {
+                let version_made_by = match Version::from_word(word) {
                     Some(x) => x,
                     None => return Err(Error::new(ErrorKind::Other, "Bad version made by")),
                 };
