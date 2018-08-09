@@ -443,12 +443,9 @@ pub fn deflate<R: Read, W: Write>(
     loop {
         let len = input.read(&mut bytes).unwrap();
         if len == 0 {
-            if read_len == 0 {
-                return Ok((0, 0));
-            } else {
-                break;
-            }
-        } else if read_len == 0 {
+            break;
+        }
+        if read_len == 0 {
             writer.write_bits(1, 1);
             writer.write_bits(BlockType::DynamicHuffman as u16, 2);
         }
@@ -498,6 +495,9 @@ pub fn deflate<R: Read, W: Write>(
             info!("deflate lit {:02x}", *b);
             vlz.push(LZ77::Literal(u16::from(*b)));
         }
+    }
+    if read_len == 0 {
+        return Ok((0, 0));
     }
     while lfreq.len() > MIN_NUM_LIT && *(lfreq.last().unwrap()) == 0 {
         lfreq.pop(); //lfreq.resize(257, 0);//literals only
