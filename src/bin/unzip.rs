@@ -5,7 +5,7 @@ extern crate zip;
 use zip::zip::*;
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
     let args: Vec<String> = env::args().collect();
     match args.len() {
         2 => {

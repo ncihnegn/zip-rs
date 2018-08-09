@@ -563,7 +563,7 @@ mod test {
     use super::*;
 
     use env_logger;
-    use rand::{self, Rng};
+    use rand::{self, Rng, RngCore};
 
     fn end_to_end_test(uncompressed_len: usize) {
         let mut rng = rand::thread_rng();
@@ -593,7 +593,7 @@ mod test {
         }
     }
 
-    //#[test]
+    #[test]
     fn huffman_short() {
         for uncompressed_len in 0..(MIN_LEN + 1) {
             end_to_end_test(uncompressed_len);
@@ -607,9 +607,9 @@ mod test {
         }
     }
 
-    //#[test]
+    #[test]
     fn codelen_alphabet() {
-        env_logger::init().unwrap();
+        env_logger::init();
         let len = rand::random::<u16>() as usize;
         let mut v = Vec::with_capacity(len);
         v.resize(len, 0);
@@ -645,7 +645,7 @@ mod test {
         assert_eq!(v, d);
     }
 
-    //#[test]
+    #[test]
     fn codelen_huffman() {
         let len = rand::random::<u16>() as usize;
         let mut v = Vec::with_capacity(len);
