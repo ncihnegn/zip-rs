@@ -1,8 +1,8 @@
 use std::fmt;
 use std::fs::{self, File};
-use std::io::{BufReader, BufWriter, Error, ErrorKind};
-use std::io::SeekFrom::{Current, Start};
 use std::io::prelude::*;
+use std::io::SeekFrom::{Current, Start};
+use std::io::{BufReader, BufWriter, Error, ErrorKind};
 use std::str;
 use std::string::String;
 use std::vec::Vec;

@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Seek, SeekFrom};
 use std::io::prelude::*;
+use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Seek, SeekFrom};
 use std::str;
 
 use num::FromPrimitive;
