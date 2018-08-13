@@ -424,6 +424,21 @@ fn compare(bytes: &[u8], i: usize, j: usize) -> usize {
     len
 }
 
+fn max_match(bytes: &[u8], prev: &[usize], len: usize, i: usize) -> (usize, usize) {
+    let mut next = prev[i];
+    let mut max_len: usize = 0;
+    let mut max_dist: usize = 0;
+    while next != len && i - next < MAX_DIST {
+        let len = compare(&bytes, i, next);
+        if len > max_len {
+            max_dist = i - next;
+            max_len = len;
+        }
+        next = prev[next];
+    }
+    (max_dist, max_len)
+}
+
 pub fn deflate<R: Read, W: Write>(
     input: &mut BufReader<R>,
     output: &mut BufWriter<W>,
@@ -459,17 +474,7 @@ pub fn deflate<R: Read, W: Write>(
                 let hash = trans24(b);
                 prev[i] = *(head.get(&hash).unwrap_or(&len));
                 let _ = head.insert(hash, i);
-                let mut next = prev[i];
-                let mut max_len: usize = 0;
-                let mut max_dist: usize = 0;
-                while next != len && i - next < MAX_DIST {
-                    let len = compare(&bytes, i, next);
-                    if len > max_len {
-                        max_dist = i - next;
-                        max_len = len;
-                    }
-                    next = prev[next];
-                }
+                let (max_dist, max_len) = max_match(&bytes, &prev, len, i);
                 if max_len >= MIN_LEN {
                     lfreq[length_code(max_len).unwrap().0] += 1;
                     dfreq[dist_code(max_dist).unwrap().0] += 1;
