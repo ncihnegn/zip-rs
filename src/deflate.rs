@@ -439,6 +439,7 @@ pub fn deflate<R: Read, W: Write>(
     let mut dfreq = Vec::<usize>::with_capacity(MAX_DIST);
     dfreq.resize(MAX_DIST, 0);
     let mut read_len = 0;
+    let mut head = HashMap::<usize, usize>::new();
 
     loop {
         let len = input.read(&mut bytes).unwrap();
@@ -449,12 +450,12 @@ pub fn deflate<R: Read, W: Write>(
             writer.write_bits(1, 1);
             writer.write_bits(BlockType::DynamicHuffman as u16, 2);
         }
-        let mut head = HashMap::<usize, usize>::new();
         read_len += len;
+        let incr = if len >= MIN_LEN { len - (MIN_LEN - 1) } else { 0 };
         if len >= MIN_LEN {
-            let mut prev = Vec::<usize>::with_capacity(len - (MIN_LEN - 1));
-            prev.resize(len - (MIN_LEN - 1), len);
-            for (i, b) in bytes.windows(MIN_LEN).enumerate().take(len - (MIN_LEN - 1)) {
+            let mut prev = Vec::<usize>::with_capacity(incr);
+            prev.resize(incr, len);
+            for (i, b) in bytes.windows(MIN_LEN).enumerate().take(incr) {
                 let hash = trans24(b);
                 prev[i] = *(head.get(&hash).unwrap_or(&len));
                 let _ = head.insert(hash, i);
@@ -485,12 +486,7 @@ pub fn deflate<R: Read, W: Write>(
             }
         }
 
-        let begin = if len >= MIN_LEN {
-            len - (MIN_LEN - 1)
-        } else {
-            0
-        };
-        for b in bytes.iter().take(len).skip(begin) {
+        for b in bytes.iter().take(len).skip(incr) {
             lfreq[*b as usize] += 1;
             info!("deflate lit {:02x}", *b);
             vlz.push(LZ77::Literal(u16::from(*b)));
