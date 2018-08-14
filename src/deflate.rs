@@ -466,7 +466,11 @@ pub fn deflate<R: Read, W: Write>(
             writer.write_bits(BlockType::DynamicHuffman as u16, 2);
         }
         read_len += len;
-        let incr = if len >= MIN_LEN { len - (MIN_LEN - 1) } else { 0 };
+        let incr = if len >= MIN_LEN {
+            len - (MIN_LEN - 1)
+        } else {
+            0
+        };
         if len >= MIN_LEN {
             let mut prev = Vec::<usize>::with_capacity(incr);
             prev.resize(incr, len);
