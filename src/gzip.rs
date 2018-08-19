@@ -2,12 +2,12 @@ use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Seek, SeekFrom};
+use std::mem::transmute;
 use std::str;
 
 use num::FromPrimitive;
 
 use deflate::*;
-use util::*;
 
 struct Flags {
     ftext: bool,
@@ -124,7 +124,7 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
             flg.fcomment = true;
         }
         try!(reader.read_exact(&mut dword));
-        let mtime = trans32(dword);
+        let mtime = trans_bytes!(dword);
         try!(reader.read_exact(&mut byte));
         let xfl = match ExtraFlags::from_u8(byte[0]) {
             Some(x) => x,
@@ -139,7 +139,7 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
         let mut extra = Vec::<u8>::new();
         if flg.fextra {
             try!(reader.read_exact(&mut word));
-            let xlen = trans16(word);
+            let xlen: u16 = trans_bytes!(word);
             extra.resize(xlen as usize, 0);
             try!(reader.read_exact(&mut extra as &mut [u8]));
         }
@@ -170,7 +170,7 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
         }
         let crc16: u16 = if flg.fhcrc {
             try!(reader.read_exact(&mut word));
-            trans16(word)
+            trans_bytes!(word)
         } else {
             0
         };
@@ -183,9 +183,9 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
             Ok(x) => x,
             Err(_) => return Err(Error::new(ErrorKind::Other, "Can't get the inner output")),
         };
-        let crc32: u32 = trans32(dword);
+        let crc32: u32 = trans_bytes!(dword);
         try!(reader.read_exact(&mut dword));
-        let isize: u32 = trans32(dword);
+        let isize: u32 = trans_bytes!(dword);
         debug!(
             "{}({:08x}), expected {}({:08x})",
             decompressed_size, crc, isize, crc32

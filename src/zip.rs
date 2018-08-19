@@ -3,6 +3,7 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 use std::io::SeekFrom::{Current, Start};
 use std::io::{BufReader, BufWriter, Error, ErrorKind};
+use std::mem::transmute;
 use std::str;
 use std::string::String;
 use std::vec::Vec;
@@ -11,7 +12,6 @@ use crc::crc32::{Digest, Hasher32, IEEE};
 use num::FromPrimitive;
 
 use deflate::*;
-use util::*;
 
 #[repr(u32)]
 #[derive(FromPrimitive)]
@@ -335,7 +335,7 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
     let _ = reader.read_exact(&mut word);
     let tmp = word;
     let _ = reader.read_exact(&mut word);
-    let method = match CompMethod::from_u16(trans16(word)) {
+    let method = match CompMethod::from_u16(trans_bytes!(word)) {
         Some(x) => x,
         None => {
             return Err(Error::new(
@@ -346,19 +346,19 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
     };
     let gpbf = GPBF::new(&tmp, &method);
     let _ = reader.read_exact(&mut word);
-    let time: u16 = trans16(word);
+    let time: u16 = trans_bytes!(word);
     let _ = reader.read_exact(&mut word);
-    let date: u16 = trans16(word);
+    let date: u16 = trans_bytes!(word);
     let _ = reader.read_exact(&mut dword);
-    let crc: u32 = trans32(dword);
+    let crc: u32 = trans_bytes!(dword);
     let _ = reader.read_exact(&mut dword);
-    let compressed_size: u32 = trans32(dword);
+    let compressed_size: u32 = trans_bytes!(dword);
     let _ = reader.read_exact(&mut dword);
-    let uncompressed_size: u32 = trans32(dword);
+    let uncompressed_size: u32 = trans_bytes!(dword);
     let _ = reader.read_exact(&mut word);
-    let file_name_length: u16 = trans16(word);
+    let file_name_length: u16 = trans_bytes!(word);
     let _ = reader.read_exact(&mut word);
-    let extra_field_length: u16 = trans16(word);
+    let extra_field_length: u16 = trans_bytes!(word);
     Ok(LocalFileHeader {
         file_name: String::new(),
         version_needed_to_extract: version,
@@ -396,7 +396,7 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
     let mut cfh_counter = 0;
     let mut lfhs = Vec::<LocalFileHeader>::new();
     while reader.read_exact(&mut dword).is_ok() {
-        let signature = Signature::from_u32(trans32(dword));
+        let signature = Signature::from_u32(trans_bytes!(dword));
         match signature {
             Some(Signature::LFH) => {
                 lfh_counter += 1;
@@ -424,15 +424,15 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
                 try!(reader.read_exact(&mut lfh_array));
                 let mut lfh = try!(read_lfh(lfh_array));
                 try!(reader.read_exact(&mut word));
-                let file_comment_length: u16 = trans16(word);
+                let file_comment_length: u16 = trans_bytes!(word);
                 try!(reader.read_exact(&mut word));
-                let disk_number = trans16(word);
+                let disk_number = trans_bytes!(word);
                 try!(reader.read_exact(&mut word));
-                let internal = trans16(word);
+                let internal = trans_bytes!(word);
                 try!(reader.read_exact(&mut dword));
-                let external = trans32(dword);
+                let external = trans_bytes!(dword);
                 try!(reader.read_exact(&mut dword));
-                let offset = trans32(dword);
+                let offset = trans_bytes!(dword);
                 let mut v = Vec::<u8>::new();
                 v.resize(lfh.file_name_length as usize, 0);
                 try!(reader.read_exact(&mut v as &mut [u8]));
@@ -452,7 +452,7 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
             Some(Signature::ECDR64) => {
                 debug!("Zip64 end of central directory record");
                 try!(reader.read_exact(&mut qword));
-                let size: u64 = trans64(qword);
+                let size: u64 = trans_bytes!(qword);
                 try!(reader.seek(Current(size as i64)));
             }
             Some(Signature::ECDL64) => {
@@ -463,7 +463,7 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
                 debug!("end of central directory record");
                 try!(reader.seek(Current(2 * 4 + 4 * 2)));
                 try!(reader.read_exact(&mut word));
-                let file_comment_length: u16 = trans16(word);
+                let file_comment_length: u16 = trans_bytes!(word);
                 try!(reader.seek(Current(i64::from(file_comment_length))));
             }
             _ => {

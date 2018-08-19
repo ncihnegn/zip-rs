@@ -10,9 +10,10 @@ extern crate num_derive;
 mod bitstream;
 mod constant;
 pub mod deflate;
-pub mod gzip;
 pub mod huffman;
+#[macro_use]
 mod util;
+pub mod gzip;
 pub mod zip;
 
 #[cfg(test)]
