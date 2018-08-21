@@ -63,11 +63,14 @@ fn length_code(len: usize) -> Result<(usize, u8), Error> {
 }
 
 fn dist_code(dist: usize) -> Result<(usize, u8), Error> {
-    let dm5 = dist - 5;
-    let bits = (dm5 as f32).log2().floor() as usize;
-    match dist {
-        1...4 => Ok((dm5 + 4, bits as u8)),
-        5...32_768 => Ok(((dm5 >> bits) + 4, bits as u8)),
+    let dm1 = dist - 1;
+    match dm1 {
+        0...3 => Ok((dm1, 0u8)),
+        4...32_767 => {
+            let bits = (dm1 as f32).log2().floor() as usize - 1;
+            let rem = (dm1 - (1 << (bits + 1))) >> bits;
+            Ok((bits * 2 + 2 + rem, bits as u8))
+        }
         _ => Err(Error::new(ErrorKind::Other, "Wrong distance")),
     }
 }
@@ -76,6 +79,7 @@ fn read_distance<R: Read>(dcode: u16, reader: &mut BitReader<R>) -> Result<u16, 
     let distance = if dcode > 3 {
         let extra_bits = (dcode - 2) / 2;
         let extra = try!(reader.read_bits(extra_bits as u8, true));
+        debug!("extra {}", extra);
         (1 << extra_bits) * (2 + (dcode % 2)) + extra
     } else {
         dcode
@@ -358,7 +362,7 @@ pub fn inflate<R: Read, W: Write>(
                     hasher.write(&b);
                 }
                 window.push(byte);
-                debug!("inflate lit {:02x}", lit);
+                info!("inflate lit {:02x} at {}", lit, decompressed_size);
                 decompressed_size += 1;
             }
             END_OF_BLOCK => {
@@ -380,6 +384,7 @@ pub fn inflate<R: Read, W: Write>(
                     }
                 };
                 assert!(dcode < NUM_DIST_CODE);
+                debug!("dcode {}", dcode);
                 let dist = try!(read_distance(dcode, &mut reader)) as usize;
                 debug!("{}: {}", decompressed_size, to_hex_string(&window));
                 info!("inflate copy {} {}", dist, len);
@@ -396,6 +401,7 @@ pub fn inflate<R: Read, W: Write>(
                 let mut copied = 0;
                 let first = window.len() - dist;
                 let seg = Vec::from_iter(window[first..first + cur_len].iter().cloned());
+                debug!("copy: {}", to_hex_string(&seg));
                 while copied + cur_len <= len {
                     window.extend_from_slice(&seg);
                     copied += cur_len;
@@ -405,6 +411,7 @@ pub fn inflate<R: Read, W: Write>(
                     window.extend_from_slice(&seg[0..cur_len]);
                 }
                 decompressed_size += len as u32;
+                debug!("decompressed size: {}", decompressed_size);
             }
             _ => {
                 return Err(Error::new(ErrorKind::Other, "Bad literal"));
@@ -474,22 +481,31 @@ pub fn deflate<R: Read, W: Write>(
         if len >= MIN_LEN {
             let mut prev = Vec::<usize>::with_capacity(incr);
             prev.resize(incr, len);
+            let mut skip_len = 0;
             for (i, b) in bytes.windows(MIN_LEN).enumerate().take(incr) {
+                if skip_len > 0 {
+                    skip_len -= 1;
+                    continue;
+                }
                 let hash = trans24(b);
                 prev[i] = *(head.get(&hash).unwrap_or(&len));
                 let _ = head.insert(hash, i);
                 let (max_dist, max_len) = max_match(&bytes, &prev, len, i);
                 if max_len >= MIN_LEN {
+                    let dcode = dist_code(max_dist).unwrap().0;
                     lfreq[length_code(max_len).unwrap().0] += 1;
-                    dfreq[dist_code(max_dist).unwrap().0] += 1;
+                    dfreq[dcode] += 1;
                     info!("deflate copy {} {}", max_dist, max_len);
+                    debug!("dcode {}", dcode);
+                    debug!("copy {}", to_hex_string(b));
                     vlz.push(LZ77::Copy {
                         len: max_len,
                         dist: max_dist,
                     });
+                    skip_len = max_len - 1;
                 } else {
                     lfreq[b[0] as usize] += 1;
-                    info!("deflate lit {:02x}", b[0]);
+                    info!("deflate lit {:02x} at {}", b[0], i);
                     vlz.push(LZ77::Literal(u16::from(b[0])));
                 }
             }
@@ -556,7 +572,7 @@ fn dehuffman(vlz: &[LZ77], lenc: &[(Bits, u8)], denc: &[(Bits, u8)]) -> Vec<(Bit
                 vhuff.push(((lc.0 & ((1 << lc.1) - 1)) as u16, lc.1));
                 let dc = dist_code(d).unwrap();
                 vhuff.push(denc[dc.0]);
-                vhuff.push(((dc.0 & ((1 << dc.1) - 1)) as u16, dc.1));
+                vhuff.push((((d - 1) & ((1 << dc.1) - 1)) as u16, dc.1));
             }
         }
     }
@@ -568,15 +584,26 @@ mod test {
     use super::*;
 
     use env_logger;
-    use rand::{self, Rng, RngCore};
+    use rand::{self, Rng, RngCore}; //, SeedableRng, StdRng};
+
+    #[test]
+    fn dist_code_test() {
+        assert_eq!(dist_code(1).unwrap(), (0, 0));
+        assert_eq!(dist_code(2).unwrap(), (1, 0));
+        assert_eq!(dist_code(3).unwrap(), (2, 0));
+        assert_eq!(dist_code(4).unwrap(), (3, 0));
+        assert_eq!(dist_code(5).unwrap(), (4, 1));
+        assert_eq!(dist_code(6).unwrap(), (4, 1));
+        assert_eq!(dist_code(32768).unwrap(), (29, 13));
+    }
 
     fn end_to_end_test(uncompressed_len: usize) {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::thread_rng(); //StdRng::from_seed([0u8;32]);
         info!("uncompressed length: {}", uncompressed_len);
         let mut uncompressed = Vec::<u8>::with_capacity(uncompressed_len);
         uncompressed.resize(uncompressed_len, 0);
         rng.fill_bytes(&mut uncompressed);
-        info!("uncompressed : {:?}", uncompressed);
+        info!("uncompressed: {:?}", uncompressed);
         let mut hasher = Digest::new(IEEE);
         hasher.write(&uncompressed);
         let crc = hasher.sum32();
@@ -600,6 +627,7 @@ mod test {
 
     #[test]
     fn huffman_short() {
+        env_logger::try_init();
         for uncompressed_len in 0..(MIN_LEN + 1) {
             end_to_end_test(uncompressed_len);
         }
@@ -607,14 +635,15 @@ mod test {
 
     #[test]
     fn huffman_long() {
-        for uncompressed_len in (MIN_LEN + 1)..(u16::MAX as usize) {
-            end_to_end_test(uncompressed_len);
-        }
+        env_logger::try_init();
+        let uncompressed_len = rand::thread_rng().gen_range(MIN_LEN + 1, u16::MAX as usize);
+        info!("Testing uncompressed length: {}", uncompressed_len);
+        end_to_end_test(uncompressed_len);
     }
 
     #[test]
     fn codelen_alphabet() {
-        env_logger::init();
+        env_logger::try_init();
         let len = rand::random::<u16>() as usize;
         let mut v = Vec::with_capacity(len);
         v.resize(len, 0);
@@ -652,6 +681,7 @@ mod test {
 
     #[test]
     fn codelen_huffman() {
+        env_logger::try_init();
         let len = rand::random::<u16>() as usize;
         let mut v = Vec::with_capacity(len);
         v.resize(len, 0);
