@@ -316,6 +316,7 @@ fn read_fixed_literal<R: Read>(reader: &mut BitReader<R>) -> u16 {
     lit
 }
 
+#[allow(clippy::cyclomatic_complexity)]
 pub fn inflate<R: Read, W: Write>(
     input: &mut BufReader<R>,
     output: &mut BufWriter<W>,
@@ -446,6 +447,7 @@ fn max_match(bytes: &[u8], prev: &[usize], len: usize, i: usize) -> (usize, usiz
     (max_dist, max_len)
 }
 
+#[allow(clippy::cyclomatic_complexity)]
 pub fn deflate<R: Read, W: Write>(
     input: &mut BufReader<R>,
     output: &mut BufWriter<W>,

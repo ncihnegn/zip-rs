@@ -27,7 +27,7 @@ enum ExtraFlags {
 
 #[repr(u8)]
 #[derive(FromPrimitive)]
-#[cfg_attr(feature = "cargo-clippy", allow(enum_variant_names))]
+#[allow(clippy::enum_variant_names)]
 enum OS {
     FAT = 0,
     Amiga = 1,

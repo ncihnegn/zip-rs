@@ -1,3 +1,5 @@
+#![feature(tool_lints)]
+
 extern crate crc;
 #[macro_use]
 extern crate lazy_static;
