@@ -47,13 +47,24 @@ impl HuffmanDec {
     }
 
     pub fn fixed_literal_dec() -> HuffmanDec {
-        let count: Vec<u16> = vec![0, 0, 0, 0, 0, 0, 0, 280 - 256, 144 + 288 - 280, 256 - 144];
+        let count = vec![
+            0 as u16,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            280 - 256,
+            144 + 288 - 280,
+            256 - 144,
+        ];
         let mut symbol: Vec<u16> = (256..280).collect();
         let mut len8 = (0..144).collect();
         symbol.append(&mut len8);
-        let mut len8a: Vec<u16> = (280..288).collect();
+        let mut len8a = (280..288).collect();
         symbol.append(&mut len8a);
-        let mut len9: Vec<u16> = (144..256).collect();
+        let mut len9 = (144..256 as u16).collect();
         symbol.append(&mut len9);
         HuffmanDec { count, symbol }
     }
@@ -63,8 +74,7 @@ pub struct HuffmanEnc {}
 
 impl HuffmanEnc {
     pub fn fixed_literal_enc() -> Vec<(Bits, u8)> {
-        let mut lit_lens = Vec::<u8>::with_capacity(MAX_NUM_LIT);
-        lit_lens.resize(MAX_NUM_LIT, 8);
+        let mut lit_lens = vec![8 as u8; MAX_NUM_LIT];
         for l in lit_lens.iter_mut().take(256).skip(144) {
             *l = 9;
         }
@@ -107,8 +117,7 @@ pub fn assign_lengths(v: &[usize]) -> Vec<u8> {
     let mut todo = Vec::new();
     todo.push(root);
     let mut level: u8 = 0;
-    let mut lengths = Vec::<u8>::with_capacity(v.len());
-    lengths.resize(v.len(), 0);
+    let mut lengths = vec![0 as u8; v.len()];
     info!("{:?}", todo);
     while !todo.is_empty() {
         let mut next = Vec::new();
@@ -132,14 +141,12 @@ pub fn assign_lengths(v: &[usize]) -> Vec<u8> {
 
 /// Generate a canonical Huffman encoding table with lengths
 pub fn gen_huffman_enc(v: &[u8]) -> Vec<(Bits, u8)> {
-    let mut bl_count = Vec::<Bits>::new();
     let max_bits = *v.iter().max().unwrap() as usize;
-    bl_count.resize(max_bits + 1, 0);
+    let mut bl_count = vec![0 as Bits; max_bits + 1];
     for i in v {
         bl_count[*i as usize] += 1;
     }
-    let mut next_code = Vec::<Bits>::new();
-    next_code.resize(max_bits + 1, 0);
+    let mut next_code = vec![0 as Bits; max_bits + 1];
     let mut code: Bits = 0;
     bl_count[0] = 0;
     for (bits, bl) in bl_count.iter().enumerate().take(max_bits) {
@@ -147,8 +154,7 @@ pub fn gen_huffman_enc(v: &[u8]) -> Vec<(Bits, u8)> {
         next_code[bits + 1] = code;
     }
     let max_code = v.len() - 1;
-    let mut enc = Vec::<(Bits, u8)>::new();
-    enc.resize(max_code + 1, (0, 0));
+    let mut enc = vec![(0 as Bits, 0 as u8); max_code + 1];
     for (n, l) in v.iter().enumerate().take(max_code + 1) {
         let len = *l as usize;
         if len != 0 {
@@ -160,23 +166,20 @@ pub fn gen_huffman_enc(v: &[u8]) -> Vec<(Bits, u8)> {
 }
 
 pub fn gen_huffman_dec(lengths: &[u8], n: u16) -> HuffmanDec {
-    let mut count: Vec<u16> = Vec::new();
     let max_bits = *lengths.iter().max().unwrap() as usize;
     assert!(max_bits <= MAX_NUM_BITS);
-    count.resize(max_bits + 1, 0);
+    let mut count = vec![0 as u16; max_bits + 1];
     for i in lengths {
         if *i != 0 {
             count[*i as usize] += 1;
         }
     }
-    let mut offsets: Vec<u16> = Vec::new();
-    offsets.resize(max_bits + 1, 0);
+    let mut offsets = vec![0 as u16; max_bits + 1];
     for (i, c) in count.iter().enumerate().take(max_bits).skip(1) {
         offsets[i + 1] = offsets[i] + *c;
     }
     //let n = offsets[max_bits+1];//total number of symbols
-    let mut symbol: Vec<u16> = Vec::new();
-    symbol.resize(n as usize, 0);
+    let mut symbol = vec![0 as u16; n as usize];
     for (sym, l) in lengths.iter().enumerate().take(n as usize) {
         let len = *l as usize;
         if len > 0 {
@@ -253,8 +256,7 @@ mod test {
     #[test]
     fn assign_lengths_test() {
         // Introduction to Algorithms, Third Edition, Figure 16.5
-        let mut v = Vec::new();
-        v.resize('f' as usize + 1, 0);
+        let mut v = vec![0; 'f' as usize + 1];
         v['f' as usize] = 5;
         v['e' as usize] = 9;
         v['c' as usize] = 12;
@@ -272,8 +274,7 @@ mod test {
 
     #[test]
     fn assign_lengths_re() {
-        let mut v = Vec::new();
-        v.resize(6, 0);
+        let mut v = vec![0; 6];
         v[5] = 2;
         let l = assign_lengths(&v);
         assert_eq!(l[5] as usize, 1);

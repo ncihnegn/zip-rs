@@ -403,8 +403,7 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
                 debug!("local file header {} ", lfh_counter);
                 try!(reader.read_exact(&mut lfh_array));
                 let mut lfh = try!(read_lfh(lfh_array));
-                let mut v = Vec::<u8>::new();
-                v.resize(lfh.file_name_length as usize, 0);
+                let mut v = vec![0 as u8; lfh.file_name_length as usize];
                 try!(reader.read_exact(&mut v as &mut [u8]));
                 lfh.file_name = String::from_utf8(v).unwrap();
                 try!(reader.seek(Current(i64::from(lfh.extra_field_length))));
@@ -433,8 +432,7 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
                 let external = trans_bytes!(dword);
                 try!(reader.read_exact(&mut dword));
                 let offset = trans_bytes!(dword);
-                let mut v = Vec::<u8>::new();
-                v.resize(lfh.file_name_length as usize, 0);
+                let mut v = vec![0 as u8; lfh.file_name_length as usize];
                 try!(reader.read_exact(&mut v as &mut [u8]));
                 lfh.file_name = String::from_utf8(v).unwrap();
                 try!(reader.seek(Current(i64::from(lfh.extra_field_length))));
@@ -490,8 +488,7 @@ pub fn extract(file_name: &str, lfh: &LocalFileHeader) -> Result<(), Error> {
     let mut writer = BufWriter::new(out);
     match lfh.compression_method {
         CompMethod::Store => {
-            let mut out = Vec::<u8>::new();
-            out.resize(64 * 1024, 0);
+            let mut out = vec![0 as u8; 64 * 1024];
             let mut copied = 0;
             let mut hasher = Digest::new(IEEE);
             while copied < lfh.uncompressed_size {

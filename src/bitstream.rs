@@ -81,11 +81,10 @@ impl BitWriter {
         self.acc |= (u32::from(c)) << self.bits;
         self.bits += n;
         let nb = self.bits / 8;
-        let mut bytes = Vec::<u8>::with_capacity(nb as usize);
+        let mut bytes = vec![0 as u8; nb as usize];
         if nb > 0 {
-            bytes.reserve(nb as usize);
-            for _ in 0..nb {
-                bytes.push((self.acc & 0xFF) as u8);
+            for b in bytes.iter_mut() {
+                *b = (self.acc & 0xFF) as u8;
                 self.acc >>= 8;
             }
             //let nc = try!(self.buf.write(&bytes as &[u8]));

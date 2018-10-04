@@ -27,7 +27,7 @@ enum ExtraFlags {
 
 #[repr(u8)]
 #[derive(FromPrimitive)]
-#[cfg_attr(feature = "cargo-clippy", allow(enum_variant_names))]
+#[allow(clippy::enum_variant_names)]
 enum OS {
     FAT = 0,
     Amiga = 1,
@@ -136,11 +136,10 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
             Some(x) => x,
             None => return Err(Error::new(ErrorKind::Other, "Bad XFL")),
         };
-        let mut extra = Vec::<u8>::new();
         if flg.fextra {
             try!(reader.read_exact(&mut word));
             let xlen: u16 = trans_bytes!(word);
-            extra.resize(xlen as usize, 0);
+            let mut extra = vec![0 as u8; xlen as usize];
             try!(reader.read_exact(&mut extra as &mut [u8]));
         }
         let file_name = if flg.fname {

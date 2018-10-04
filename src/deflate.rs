@@ -93,8 +93,7 @@ fn read_code_lengths<R: Read>(
     n: usize,
 ) -> Result<Vec<u8>, Error> {
     debug!("To read {} code lengths", n);
-    let mut lens = Vec::<u8>::with_capacity(n);
-    lens.resize(n, 0);
+    let mut lens = vec![0 as u8; n];
     let mut index = 0;
     while index < n {
         let s = try!(read_code(reader, clen_dec)) as u8;
@@ -138,8 +137,7 @@ fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, Hu
     let hdist = try!(reader.read_bits(5, true)) as usize + 1;
     let hclen = try!(reader.read_bits(4, true)) as usize + 4;
     let max_hclen = HCLEN_ORDER.len();
-    let mut hclen_len = Vec::<u8>::with_capacity(max_hclen);
-    hclen_len.resize(max_hclen, 0);
+    let mut hclen_len = vec![0 as u8; max_hclen];
     assert!(hlit <= 286 && hclen <= max_hclen && hdist <= 32);
     for i in HCLEN_ORDER.iter().take(hclen) {
         hclen_len[*i] = try!(reader.read_bits(3, true)) as u8;
@@ -226,8 +224,7 @@ fn update_freq(freq: &mut Vec<usize>, eclens: &[CodeLength]) {
 }
 
 fn reordered_code_lengths(clens: &[u8]) -> Vec<u8> {
-    let mut mapped_clens = Vec::with_capacity(HCLEN_ORDER.len());
-    mapped_clens.resize(HCLEN_ORDER.len(), 0);
+    let mut mapped_clens = vec![0; HCLEN_ORDER.len()];
     for (i, o) in HCLEN_ORDER.iter().enumerate().take(clens.len()) {
         mapped_clens[i] = clens[*o as usize];
     }
@@ -244,8 +241,7 @@ fn write_code_table(writer: &mut BitWriter, lit_clens: &[u8], dist_clens: &[u8])
     v.extend(writer.write_bits(hdist as u16, 5).iter());
     let lit_eclens = encode_code_lengths(lit_clens);
     let dist_eclens = encode_code_lengths(dist_clens);
-    let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
-    freq.resize(HCLEN_ORDER.len(), 0);
+    let mut freq = vec![0 as usize; HCLEN_ORDER.len()];
     update_freq(&mut freq, &lit_eclens);
     update_freq(&mut freq, &dist_eclens);
     let clen = assign_lengths(&freq);
@@ -456,10 +452,8 @@ pub fn deflate<R: Read, W: Write>(
     let mut hasher = Digest::new(IEEE);
     let mut writer = BitWriter::new();
 
-    let mut lfreq = Vec::<usize>::with_capacity(MAX_NUM_LIT);
-    lfreq.resize(MAX_NUM_LIT, 0);
-    let mut dfreq = Vec::<usize>::with_capacity(MAX_DIST);
-    dfreq.resize(MAX_DIST, 0);
+    let mut lfreq = vec![0 as usize; MAX_NUM_LIT];
+    let mut dfreq = vec![0 as usize; MAX_DIST];
     let mut read_len = 0;
     let mut head = HashMap::<usize, usize>::new();
 
@@ -479,8 +473,7 @@ pub fn deflate<R: Read, W: Write>(
             0
         };
         if len >= MIN_LEN {
-            let mut prev = Vec::<usize>::with_capacity(incr);
-            prev.resize(incr, len);
+            let mut prev = vec![len as usize; incr];
             let mut skip_len = 0;
             for (i, b) in bytes.windows(MIN_LEN).enumerate().take(incr) {
                 if skip_len > 0 {
@@ -600,8 +593,7 @@ mod test {
     fn end_to_end_test(uncompressed_len: usize) {
         let mut rng = rand::thread_rng(); //StdRng::from_seed([0u8;32]);
         info!("uncompressed length: {}", uncompressed_len);
-        let mut uncompressed = Vec::<u8>::with_capacity(uncompressed_len);
-        uncompressed.resize(uncompressed_len, 0);
+        let mut uncompressed = vec![0 as u8; uncompressed_len];
         rng.fill_bytes(&mut uncompressed);
         info!("uncompressed: {:?}", uncompressed);
         let mut hasher = Digest::new(IEEE);
@@ -645,8 +637,7 @@ mod test {
     fn codelen_alphabet() {
         env_logger::try_init();
         let len = rand::random::<u16>() as usize;
-        let mut v = Vec::with_capacity(len);
-        v.resize(len, 0);
+        let mut v = vec![0; len];
         let mut rng = rand::thread_rng();
         for i in 0..len {
             v[i] = rng.gen_range(0, 16); //[0,16)
@@ -683,15 +674,13 @@ mod test {
     fn codelen_huffman() {
         env_logger::try_init();
         let len = rand::random::<u16>() as usize;
-        let mut v = Vec::with_capacity(len);
-        v.resize(len, 0);
+        let mut v = vec![0; len];
         let mut rng = rand::thread_rng();
         for i in 0..len {
             v[i] = rng.gen_range(0, 16); //[0,16)
         }
         let eclens = encode_code_lengths(&v);
-        let mut freq = Vec::<usize>::with_capacity(HCLEN_ORDER.len());
-        freq.resize(HCLEN_ORDER.len(), 0);
+        let mut freq = vec![0 as usize; HCLEN_ORDER.len()];
         update_freq(&mut freq, &eclens);
         let clens = assign_lengths(&freq);
         let mapped_clens = reordered_code_lengths(&clens);
@@ -713,8 +702,7 @@ mod test {
         let mut reader = BitReader::new(&mut input);
         let hclen = reader.read_bits(4, true).unwrap() as usize + 4;
         let max_hclen = HCLEN_ORDER.len();
-        let mut hclen_len = Vec::<u8>::with_capacity(max_hclen);
-        hclen_len.resize(max_hclen, 0);
+        let mut hclen_len = vec![0 as u8; max_hclen];
         for i in 0..hclen {
             hclen_len[HCLEN_ORDER[i]] = reader.read_bits(3, true).unwrap() as u8;
             debug!("{}->{}", i, hclen_len[HCLEN_ORDER[i]]);
