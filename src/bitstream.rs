@@ -47,7 +47,7 @@ impl<'a, R: Read> BitReader<'a, R> {
         assert!(n <= 16);
         let mut bytes: [u8; 1] = [0; 1];
         while self.bits < n {
-            r#try!(self.buf.read_exact(&mut bytes));
+            self.buf.read_exact(&mut bytes)?;
             let byte = bytes[0];
             self.acc |= (u32::from(byte)) << self.bits;
             self.bits += 8;
@@ -87,8 +87,6 @@ impl BitWriter {
                 *b = (self.acc & 0xFF) as u8;
                 self.acc >>= 8;
             }
-            //let nc = try!(self.buf.write(&bytes as &[u8]));
-            //assert!(nc == nb as usize);
             self.bits -= nb * 8;
         }
         bytes
@@ -97,9 +95,6 @@ impl BitWriter {
     pub fn flush(&mut self) -> Option<u8> {
         if self.bits > 0 {
             assert!(self.bits < 8);
-            //let bytes: [u8; 1] = [self.acc as u8; 1];
-            //try!(self.buf.write(&bytes));
-            //try!(self.buf.flush());
             self.bits = 0;
             let byte = self.acc as u8;
             self.acc = 0;

@@ -206,7 +206,7 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
         bits <<= e;
         first <<= e;
         debug!("read {} bits", e);
-        bits |= r#try!(reader.read_bits(e, false));
+        bits |= reader.read_bits(e, false)?;
         let ct = dec.count[b];
         debug!("bits: {}", bits);
         debug!("first: {} ct: {}", first, ct);
