@@ -6,10 +6,10 @@ use std::u16;
 use crc::crc32::{Digest, Hasher32, IEEE};
 use num::FromPrimitive;
 
-use bitstream::*;
-use constant::*;
-use huffman::*;
-use util::*;
+use crate::bitstream::*;
+use crate::constant::*;
+use crate::huffman::*;
+use crate::util::*;
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
@@ -38,7 +38,7 @@ fn read_length<R: Read>(lit: u16, reader: &mut BitReader<R>) -> Result<u16, Erro
         len += 3;
     } else {
         let extra_bits = (len - 4) / 4;
-        let extra = try!(reader.read_bits(extra_bits as u8, true));
+        let extra = r#try!(reader.read_bits(extra_bits as u8, true));
         len = (1 << extra_bits) * 4 + 3 + ((len - 8) % 4) * (1 << extra_bits) + extra;
         debug!(
             "Code: {} Extra Bits: {} Extra Value: {} Length: {}",
@@ -78,7 +78,7 @@ fn dist_code(dist: usize) -> Result<(usize, u8), Error> {
 fn read_distance<R: Read>(dcode: u16, reader: &mut BitReader<R>) -> Result<u16, Error> {
     let distance = if dcode > 3 {
         let extra_bits = (dcode - 2) / 2;
-        let extra = try!(reader.read_bits(extra_bits as u8, true));
+        let extra = r#try!(reader.read_bits(extra_bits as u8, true));
         debug!("extra {}", extra);
         (1 << extra_bits) * (2 + (dcode % 2)) + extra
     } else {
@@ -96,7 +96,7 @@ fn read_code_lengths<R: Read>(
     let mut lens = vec![0 as u8; n];
     let mut index = 0;
     while index < n {
-        let s = try!(read_code(reader, clen_dec)) as u8;
+        let s = r#try!(read_code(reader, clen_dec)) as u8;
         let mut count = 0;
         let mut len: u8 = 0;
         debug!("code len {}", s);
@@ -108,13 +108,13 @@ fn read_code_lengths<R: Read>(
             16 => {
                 debug_assert!(!lens.is_empty());
                 len = lens[index - 1];
-                count = try!(reader.read_bits(2, true)) + 3;
+                count = r#try!(reader.read_bits(2, true)) + 3;
             }
             17 => {
-                count = try!(reader.read_bits(3, true)) + 3;
+                count = r#try!(reader.read_bits(3, true)) + 3;
             }
             18 => {
-                count = try!(reader.read_bits(7, true)) + 11;
+                count = r#try!(reader.read_bits(7, true)) + 11;
             }
             _ => {
                 return Err(Error::new(ErrorKind::Other, "Bad code length"));
@@ -133,18 +133,18 @@ fn read_code_lengths<R: Read>(
 }
 
 fn read_code_table<R: Read>(reader: &mut BitReader<R>) -> Result<(HuffmanDec, HuffmanDec), Error> {
-    let hlit = try!(reader.read_bits(5, true)) as usize + 257;
-    let hdist = try!(reader.read_bits(5, true)) as usize + 1;
-    let hclen = try!(reader.read_bits(4, true)) as usize + 4;
+    let hlit = r#try!(reader.read_bits(5, true)) as usize + 257;
+    let hdist = r#try!(reader.read_bits(5, true)) as usize + 1;
+    let hclen = r#try!(reader.read_bits(4, true)) as usize + 4;
     let max_hclen = HCLEN_ORDER.len();
     let mut hclen_len = vec![0 as u8; max_hclen];
     assert!(hlit <= 286 && hclen <= max_hclen && hdist <= 32);
     for i in HCLEN_ORDER.iter().take(hclen) {
-        hclen_len[*i] = try!(reader.read_bits(3, true)) as u8;
+        hclen_len[*i] = r#try!(reader.read_bits(3, true)) as u8;
     }
     let clen_dec = gen_huffman_dec(&hclen_len, max_hclen as u16);
-    let hlit_len = try!(read_code_lengths(reader, &clen_dec, hlit));
-    let hdist_len = try!(read_code_lengths(reader, &clen_dec, hdist));
+    let hlit_len = r#try!(read_code_lengths(reader, &clen_dec, hlit));
+    let hdist_len = r#try!(read_code_lengths(reader, &clen_dec, hdist));
     debug!("Read code table done");
     info!("hlit_len: {} {:?}", hlit, hlit_len);
     info!("hdist_len: {} {:?}", hdist, hdist_len);
@@ -319,13 +319,13 @@ pub fn inflate<R: Read, W: Write>(
 ) -> Result<(u32, u32), Error> {
     let mut decompressed_size: u32 = 0;
     let mut reader = BitReader::new(input);
-    let last_block_bit = try!(reader.read_bits(1, true));
+    let last_block_bit = r#try!(reader.read_bits(1, true));
     if last_block_bit == 1 {
         debug!("Last Block");
     } else {
         debug!("Not last block");
     }
-    let block_type = BlockType::from_u8(try!(reader.read_bits(2, true)) as u8);
+    let block_type = BlockType::from_u8(r#try!(reader.read_bits(2, true)) as u8);
     let mut hasher = Digest::new(IEEE);
     let mut dec = (HuffmanDec::new(), HuffmanDec::new());
     match block_type {
@@ -333,7 +333,7 @@ pub fn inflate<R: Read, W: Write>(
         Some(BlockType::FixedHuffman) => debug!("Fixed Huffman codes"),
         Some(BlockType::DynamicHuffman) => {
             debug!("Dynamic Huffman codes");
-            dec = try!(read_code_table(&mut reader));
+            dec = r#try!(read_code_table(&mut reader));
         }
         _ => return Err(Error::new(ErrorKind::Other, "Bad block type")),
     }
@@ -342,9 +342,9 @@ pub fn inflate<R: Read, W: Write>(
     let mut window = Vec::<u8>::with_capacity(MAX_DIST + MAX_LEN);
     loop {
         let lit = match block_type {
-            BlockType::Store => try!(reader.read_bits(8, false)) as u16,
-            BlockType::FixedHuffman => try!(read_code(&mut reader, &FIXED_LITERAL_DEC)),
-            BlockType::DynamicHuffman => try!(read_code(&mut reader, &dec.0)),
+            BlockType::Store => r#try!(reader.read_bits(8, false)) as u16,
+            BlockType::FixedHuffman => r#try!(read_code(&mut reader, &FIXED_LITERAL_DEC)),
+            BlockType::DynamicHuffman => r#try!(read_code(&mut reader, &dec.0)),
         };
         match lit {
             0...255 => {
@@ -354,7 +354,7 @@ pub fn inflate<R: Read, W: Write>(
                     let mut b: [u8; 1] = [0; 1];
                     b[0] = window.remove(0); //workaround clippy bug
                     debug!("write");
-                    let _ = try!(output.write(&b));
+                    let _ = r#try!(output.write(&b));
                     debug!("hasher");
                     hasher.write(&b);
                 }
@@ -367,12 +367,12 @@ pub fn inflate<R: Read, W: Write>(
                 break;
             }
             257...285 => {
-                let len = try!(read_length(lit, &mut reader)) as usize;
+                let len = r#try!(read_length(lit, &mut reader)) as usize;
                 assert!(len <= MAX_LEN);
 
                 let dcode = match block_type {
-                    BlockType::FixedHuffman => try!(reader.read_bits(5, false)),
-                    BlockType::DynamicHuffman => try!(read_code(&mut reader, &dec.1)),
+                    BlockType::FixedHuffman => r#try!(reader.read_bits(5, false)),
+                    BlockType::DynamicHuffman => r#try!(read_code(&mut reader, &dec.1)),
                     _ => {
                         return Err(Error::new(
                             ErrorKind::Other,
@@ -382,14 +382,14 @@ pub fn inflate<R: Read, W: Write>(
                 };
                 assert!(dcode < NUM_DIST_CODE);
                 debug!("dcode {}", dcode);
-                let dist = try!(read_distance(dcode, &mut reader)) as usize;
+                let dist = r#try!(read_distance(dcode, &mut reader)) as usize;
                 debug!("{}: {}", decompressed_size, to_hex_string(&window));
                 info!("inflate copy {} {}", dist, len);
                 assert!(dist > 0 && dist < MAX_DIST);
                 assert!(dist <= window.len());
                 if window.len() + len > window.capacity() {
                     let to_write = window.len() + len - window.capacity();
-                    let _ = try!(output.write(&window[0..to_write]));
+                    let _ = r#try!(output.write(&window[0..to_write]));
                     hasher.write(&window[0..to_write]);
                     window.drain(0..to_write);
                 }
@@ -415,7 +415,7 @@ pub fn inflate<R: Read, W: Write>(
             }
         }
     }
-    let _ = try!(output.write(window.as_slice()));
+    let _ = r#try!(output.write(window.as_slice()));
     hasher.write(window.as_slice());
     Ok((decompressed_size, hasher.sum32()))
 }
@@ -549,7 +549,7 @@ pub fn deflate<R: Read, W: Write>(
         window.push(c);
     }
     debug!("window {:?}", window);
-    try!(output.write_all(&window));
+    r#try!(output.write_all(&window));
     hasher.write(&window[0..window.len()]);
     let compressed_size = window.len();
     debug!("compressed size: {}", compressed_size);

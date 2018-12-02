@@ -11,7 +11,7 @@ use std::vec::Vec;
 use crc::crc32::{Digest, Hasher32, IEEE};
 use num::FromPrimitive;
 
-use deflate::*;
+use crate::deflate::*;
 
 #[repr(u32)]
 #[derive(FromPrimitive)]
@@ -327,7 +327,7 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
     let mut reader = BufReader::new(&a[..]);
     let mut word: [u8; 2] = [0; 2];
     let mut dword: [u8; 4] = [0; 4];
-    try!(reader.read_exact(&mut word));
+    r#try!(reader.read_exact(&mut word));
     let version = match Version::from_word(word) {
         Some(x) => x,
         None => return Err(Error::new(ErrorKind::Other, "Bad version in LFH")),
@@ -386,7 +386,7 @@ fn read_lfh(a: [u8; LFH_SIZE]) -> Result<LocalFileHeader, Error> {
 /// assert!(v.is_ok());
 /// ```
 pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
-    let file = try!(File::open(file_name));
+    let file = r#try!(File::open(file_name));
     let mut reader = BufReader::new(file);
     let mut word: [u8; 2] = [0; 2];
     let mut dword: [u8; 4] = [0; 4];
@@ -401,42 +401,42 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
             Some(Signature::LFH) => {
                 lfh_counter += 1;
                 debug!("local file header {} ", lfh_counter);
-                try!(reader.read_exact(&mut lfh_array));
-                let mut lfh = try!(read_lfh(lfh_array));
+                r#try!(reader.read_exact(&mut lfh_array));
+                let mut lfh = r#try!(read_lfh(lfh_array));
                 let mut v = vec![0 as u8; lfh.file_name_length as usize];
-                try!(reader.read_exact(&mut v as &mut [u8]));
+                r#try!(reader.read_exact(&mut v as &mut [u8]));
                 lfh.file_name = String::from_utf8(v).unwrap();
-                try!(reader.seek(Current(i64::from(lfh.extra_field_length))));
-                lfh.offset = try!(reader.seek(Current(0)));
-                try!(reader.seek(Current(i64::from(lfh.compressed_size))));
+                r#try!(reader.seek(Current(i64::from(lfh.extra_field_length))));
+                lfh.offset = r#try!(reader.seek(Current(0)));
+                r#try!(reader.seek(Current(i64::from(lfh.compressed_size))));
                 debug!("{}", lfh);
                 lfhs.push(lfh);
             }
             Some(Signature::CFH) => {
                 cfh_counter += 1;
                 debug!("central file header {}", cfh_counter);
-                try!(reader.read_exact(&mut word));
+                r#try!(reader.read_exact(&mut word));
                 let version_made_by = match Version::from_word(word) {
                     Some(x) => x,
                     None => return Err(Error::new(ErrorKind::Other, "Bad version made by")),
                 };
-                try!(reader.read_exact(&mut lfh_array));
-                let mut lfh = try!(read_lfh(lfh_array));
-                try!(reader.read_exact(&mut word));
+                r#try!(reader.read_exact(&mut lfh_array));
+                let mut lfh = r#try!(read_lfh(lfh_array));
+                r#try!(reader.read_exact(&mut word));
                 let file_comment_length: u16 = trans_bytes!(word);
-                try!(reader.read_exact(&mut word));
+                r#try!(reader.read_exact(&mut word));
                 let disk_number = trans_bytes!(word);
-                try!(reader.read_exact(&mut word));
+                r#try!(reader.read_exact(&mut word));
                 let internal = trans_bytes!(word);
-                try!(reader.read_exact(&mut dword));
+                r#try!(reader.read_exact(&mut dword));
                 let external = trans_bytes!(dword);
-                try!(reader.read_exact(&mut dword));
+                r#try!(reader.read_exact(&mut dword));
                 let offset = trans_bytes!(dword);
                 let mut v = vec![0 as u8; lfh.file_name_length as usize];
-                try!(reader.read_exact(&mut v as &mut [u8]));
+                r#try!(reader.read_exact(&mut v as &mut [u8]));
                 lfh.file_name = String::from_utf8(v).unwrap();
-                try!(reader.seek(Current(i64::from(lfh.extra_field_length))));
-                try!(reader.seek(Current(i64::from(file_comment_length))));
+                r#try!(reader.seek(Current(i64::from(lfh.extra_field_length))));
+                r#try!(reader.seek(Current(i64::from(file_comment_length))));
                 let cfh = CentralFileHeader {
                     version_made_by,
                     disk_number_start: disk_number,
@@ -449,20 +449,20 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
             }
             Some(Signature::ECDR64) => {
                 debug!("Zip64 end of central directory record");
-                try!(reader.read_exact(&mut qword));
+                r#try!(reader.read_exact(&mut qword));
                 let size: u64 = trans_bytes!(qword);
-                try!(reader.seek(Current(size as i64)));
+                r#try!(reader.seek(Current(size as i64)));
             }
             Some(Signature::ECDL64) => {
                 debug!("Zip64 end of central directory locator");
-                try!(reader.seek(Current(4 + 8 + 4)));
+                r#try!(reader.seek(Current(4 + 8 + 4)));
             }
             Some(Signature::ECDR) => {
                 debug!("end of central directory record");
-                try!(reader.seek(Current(2 * 4 + 4 * 2)));
-                try!(reader.read_exact(&mut word));
+                r#try!(reader.seek(Current(2 * 4 + 4 * 2)));
+                r#try!(reader.read_exact(&mut word));
                 let file_comment_length: u16 = trans_bytes!(word);
-                try!(reader.seek(Current(i64::from(file_comment_length))));
+                r#try!(reader.seek(Current(i64::from(file_comment_length))));
             }
             _ => {
                 return Err(Error::new(ErrorKind::Other, "Bad signature"));
@@ -474,17 +474,17 @@ pub fn parse(file_name: &str) -> Result<Vec<LocalFileHeader>, Error> {
 
 pub fn extract(file_name: &str, lfh: &LocalFileHeader) -> Result<(), Error> {
     debug!("{}", file_name);
-    let file = try!(File::open(file_name));
+    let file = r#try!(File::open(file_name));
     let mut reader = BufReader::new(file);
-    try!(reader.seek(Start(lfh.offset)));
+    r#try!(reader.seek(Start(lfh.offset)));
     debug!("{}", lfh.file_name);
     if lfh.file_name.ends_with('/') {
         debug!("Directory");
-        try!(fs::create_dir_all(&lfh.file_name));
+        r#try!(fs::create_dir_all(&lfh.file_name));
         return Ok(());
     }
     debug!("File");
-    let out = try!(File::create(&lfh.file_name));
+    let out = r#try!(File::create(&lfh.file_name));
     let mut writer = BufWriter::new(out);
     match lfh.compression_method {
         CompMethod::Store => {
@@ -496,15 +496,15 @@ pub fn extract(file_name: &str, lfh: &LocalFileHeader) -> Result<(), Error> {
                 if to_copy < out.len() {
                     out.resize(to_copy, 0);
                 }
-                try!(reader.read_exact(&mut out));
-                try!(writer.write_all(&out));
+                r#try!(reader.read_exact(&mut out));
+                r#try!(writer.write_all(&out));
                 copied += out.len() as u32;
                 hasher.write(&out);
             }
             assert_eq!(hasher.sum32(), lfh.crc);
         }
         CompMethod::Deflate => {
-            let (decompressed_size, checksum) = try!(inflate(&mut reader, &mut writer));
+            let (decompressed_size, checksum) = r#try!(inflate(&mut reader, &mut writer));
             assert_eq!(decompressed_size, lfh.uncompressed_size);
             assert_eq!(checksum, lfh.crc);
         }
@@ -515,7 +515,7 @@ pub fn extract(file_name: &str, lfh: &LocalFileHeader) -> Result<(), Error> {
             ))
         }
     }
-    try!(writer.flush());
+    r#try!(writer.flush());
     Ok(())
 }
 

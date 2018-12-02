@@ -47,7 +47,7 @@ impl<'a, R: Read> BitReader<'a, R> {
         assert!(n <= 16);
         let mut bytes: [u8; 1] = [0; 1];
         while self.bits < n {
-            try!(self.buf.read_exact(&mut bytes));
+            r#try!(self.buf.read_exact(&mut bytes));
             let byte = bytes[0];
             self.acc |= (u32::from(byte)) << self.bits;
             self.bits += 8;

@@ -3,8 +3,8 @@ use std::collections::BinaryHeap;
 use std::io::{Error, ErrorKind, Read};
 use std::u16;
 
-use bitstream::*;
-use constant::*;
+use crate::bitstream::*;
+use crate::constant::*;
 
 lazy_static! {
     pub static ref FIXED_LITERAL_DEC: HuffmanDec = HuffmanDec::fixed_literal_dec();
@@ -206,7 +206,7 @@ pub fn read_code<R: Read>(reader: &mut BitReader<R>, dec: &HuffmanDec) -> Result
         bits <<= e;
         first <<= e;
         debug!("read {} bits", e);
-        bits |= try!(reader.read_bits(e, false));
+        bits |= r#try!(reader.read_bits(e, false));
         let ct = dec.count[b];
         debug!("bits: {}", bits);
         debug!("first: {} ct: {}", first, ct);

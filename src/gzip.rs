@@ -7,7 +7,7 @@ use std::str;
 
 use num::FromPrimitive;
 
-use deflate::*;
+use crate::deflate::*;
 
 struct Flags {
     ftext: bool,
@@ -83,7 +83,7 @@ pub struct GzipMember {
 }
 
 pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
-    let file = try!(File::open(file_name));
+    let file = r#try!(File::open(file_name));
     let mut reader = BufReader::new(file);
     let mut byte: [u8; 1] = [0; 1];
     let mut word: [u8; 2] = [0; 2];
@@ -94,13 +94,13 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
     //assert_eq!(current, reader.seek(SeekFrom::Start(current)).unwrap());
     let _ = reader.seek(SeekFrom::Start(0));
     while reader.seek(SeekFrom::Current(0)).unwrap() != end {
-        try!(reader.read_exact(&mut byte));
+        r#try!(reader.read_exact(&mut byte));
         assert_eq!(byte[0], 0x1F);
-        try!(reader.read_exact(&mut byte));
+        r#try!(reader.read_exact(&mut byte));
         assert_eq!(byte[0], 0x8B);
-        try!(reader.read_exact(&mut byte));
+        r#try!(reader.read_exact(&mut byte));
         assert_eq!(byte[0], 8); //Deflate Only
-        try!(reader.read_exact(&mut byte));
+        r#try!(reader.read_exact(&mut byte));
         let mut flg = Flags {
             ftext: false,
             fhcrc: false,
@@ -123,28 +123,28 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
         if byte[0] & 16 == 16 {
             flg.fcomment = true;
         }
-        try!(reader.read_exact(&mut dword));
+        r#try!(reader.read_exact(&mut dword));
         let mtime = trans_bytes!(dword);
-        try!(reader.read_exact(&mut byte));
+        r#try!(reader.read_exact(&mut byte));
         let xfl = match ExtraFlags::from_u8(byte[0]) {
             Some(x) => x,
             None => return Err(Error::new(ErrorKind::Other, "Bad XFL")),
         };
 
-        try!(reader.read_exact(&mut byte));
+        r#try!(reader.read_exact(&mut byte));
         let os = match OS::from_u8(byte[0]) {
             Some(x) => x,
             None => return Err(Error::new(ErrorKind::Other, "Bad XFL")),
         };
         if flg.fextra {
-            try!(reader.read_exact(&mut word));
+            r#try!(reader.read_exact(&mut word));
             let xlen: u16 = trans_bytes!(word);
             let mut extra = vec![0 as u8; xlen as usize];
-            try!(reader.read_exact(&mut extra as &mut [u8]));
+            r#try!(reader.read_exact(&mut extra as &mut [u8]));
         }
         let file_name = if flg.fname {
             let mut v = Vec::<u8>::new();
-            try!(reader.read_until(0, &mut v));
+            r#try!(reader.read_until(0, &mut v));
             v.pop(); //Remove trailing '\0'
             String::from_utf8(v).unwrap()
         } else {
@@ -162,13 +162,13 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
         let mut file_comment = String::new();
         if flg.fcomment {
             let mut v = Vec::<u8>::new();
-            try!(reader.read_until(0, &mut v));
+            r#try!(reader.read_until(0, &mut v));
             v.pop();
             file_comment = String::from_utf8(v).unwrap();
             debug!("File comment: {}", file_comment);
         }
         let crc16: u16 = if flg.fhcrc {
-            try!(reader.read_exact(&mut word));
+            r#try!(reader.read_exact(&mut word));
             trans_bytes!(word)
         } else {
             0
@@ -176,14 +176,14 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
         let offset = reader.seek(SeekFrom::Current(0)).unwrap();
         let out = Vec::<u8>::new();
         let mut writer = BufWriter::new(out);
-        let (decompressed_size, crc) = try!(inflate(&mut reader, &mut writer));
-        try!(reader.read_exact(&mut dword));
+        let (decompressed_size, crc) = r#try!(inflate(&mut reader, &mut writer));
+        r#try!(reader.read_exact(&mut dword));
         let out = match writer.into_inner() {
             Ok(x) => x,
             Err(_) => return Err(Error::new(ErrorKind::Other, "Can't get the inner output")),
         };
         let crc32: u32 = trans_bytes!(dword);
-        try!(reader.read_exact(&mut dword));
+        r#try!(reader.read_exact(&mut dword));
         let isize: u32 = trans_bytes!(dword);
         debug!(
             "{}({:08x}), expected {}({:08x})",
@@ -211,15 +211,15 @@ pub fn parse(file_name: &str) -> Result<Vec<GzipMember>, Error> {
 }
 
 pub fn extract(file_name: &str, member: &GzipMember) -> Result<(), Error> {
-    let input = try!(File::open(file_name));
+    let input = r#try!(File::open(file_name));
     let mut reader = BufReader::new(input);
-    try!(reader.seek(SeekFrom::Start(member.offset)));
-    let output = try!(File::create(&member.file_name));
+    r#try!(reader.seek(SeekFrom::Start(member.offset)));
+    let output = r#try!(File::create(&member.file_name));
     let mut writer = BufWriter::new(output);
-    let (decompressed_size, crc) = try!(inflate(&mut reader, &mut writer));
+    let (decompressed_size, crc) = r#try!(inflate(&mut reader, &mut writer));
     assert_eq!(decompressed_size, member.isize);
     assert_eq!(crc, member.crc32);
-    try!(writer.flush());
+    r#try!(writer.flush());
     Ok(())
 }
 
